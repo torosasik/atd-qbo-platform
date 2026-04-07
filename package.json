@@ -1,0 +1,16 @@
+{
+  "name": "atd-qbo-platform",
+  "version": "1.0.0",
+  "description": "ATD QuickBooks Online Automation Platform",
+  "private": true,
+  "scripts": {
+    "dev": "cd frontend && npm start",
+    "build": "cd frontend && npm run build",
+    "deploy": "firebase deploy",
+    "deploy:functions": "firebase deploy --only functions",
+    "deploy:hosting": "firebase deploy --only hosting",
+    "emulate": "firebase emulators:start"
+  },
+  "author": "American Tile Depot",
+  "license": "PRIVATE"
+}

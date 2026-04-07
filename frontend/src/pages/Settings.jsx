@@ -1,0 +1,902 @@
+import { useState, useEffect, useCallback } from 'react';
+import { Save, RefreshCw, AlertCircle, CheckCircle, X, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
+import { api } from '../utils/api';
+import Toggle from '../components/shared/Toggle';
+import Toast from '../components/shared/Toast';
+import LoadingSpinner from '../components/shared/LoadingSpinner';
+import InfoTooltip from '../components/shared/InfoTooltip';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+const COLUMNS = ['A','B','C','D','E','F','G','H','I','J','K','L','M',
+                  'N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
+
+const COLUMN_MAPPING_FIELDS = [
+  { key: 'vendorName', label: 'Vendor Name' },
+  { key: 'itemDescription', label: 'Item Description' },
+  { key: 'quantity', label: 'Quantity' },
+  { key: 'unitPrice', label: 'Unit Price' },
+  { key: 'date', label: 'Date' },
+  { key: 'memo', label: 'Memo' },
+  { key: 'poGroupKey', label: 'PO Group Key' },
+];
+
+const MODULE_ROWS = [
+  { key: 'purchase_order', label: 'Purchase Orders', available: true },
+  { key: 'invoice', label: 'Invoices', available: false },
+  { key: 'bill', label: 'Bills', available: false },
+  { key: 'payment', label: 'Payments', available: false },
+];
+
+// ---------------------------------------------------------------------------
+// Backend defaults - must match functions/core/settings.js DEFAULT_SETTINGS
+// ---------------------------------------------------------------------------
+const BACKEND_DEFAULTS = {
+  google_sheets: {
+    po_sheet_id: '1CLycDpMsrD1KK5fBohSmExfVPKnTy0qOneUYc161BVE',
+    po_sheet_tab: 'Sheet1',
+    header_row: 1,
+    data_start_row: 2,
+    po_column_mapping: {
+      vendorName: 'A', itemDescription: 'B', quantity: 'C',
+      unitPrice: 'D', date: 'E', memo: 'F', poGroupKey: 'G',
+    },
+    invoice_sheet_id: '',
+    invoice_sheet_tab: 'Sheet1',
+    invoice_column_mapping: {
+      customerName: 'A', itemDescription: 'B', quantity: 'C',
+      unitPrice: 'D', date: 'E', memo: 'F', invoiceGroupKey: 'G',
+    },
+  },
+  ai: {
+    enabled: true,
+    auto_review: true,
+    min_confidence: 90,
+    max_tokens: 2000,
+    review_prompt: 'Review this Purchase Order for errors, duplicates, or unusual quantities. Flag anything that needs attention.',
+    ollama_model: 'qwen3.5-coder-35b:latest',
+    ollama_url: 'http://localhost:11434',
+    claude_model: 'claude-sonnet-4-20250514',
+  },
+  qbo: {
+    environment: 'production',
+    base_url: 'https://quickbooks.api.intuit.com',
+    sandbox_base_url: 'https://sandbox-quickbooks.api.intuit.com',
+    production_base_url: 'https://quickbooks.api.intuit.com',
+    default_expense_account: '',
+    default_memo_template: 'PO from ATD Platform - Order #{order_number}',
+    default_po_terms: 'Net 30',
+  },
+  modules: {
+    purchase_order: { enabled: true, auto_approve: false, require_ai_review: true, vendor_cache_hours: 24 },
+    invoice: { enabled: false, auto_approve: false },
+    bill: { enabled: false, auto_approve: false },
+    payment: { enabled: false, auto_approve: false },
+  },
+  oauth: {
+    redirect_uri: 'https://atd-qbo-platform.web.app/api/auth/callback',
+  },
+};
+
+// Local UI default shape - prevents undefined crashes before fetch completes.
+// Keys match what the backend actually stores.
+const DEFAULT_SETTINGS = {
+  google_sheets: {
+    po_sheet_id: '1CLycDpMsrD1KK5fBohSmExfVPKnTy0qOneUYc161BVE',
+    po_sheet_tab: 'Sheet1',
+    header_row: 1,
+    data_start_row: 2,
+    po_column_mapping: {
+      vendorName: 'A', itemDescription: 'B', quantity: 'C',
+      unitPrice: 'D', date: 'E', memo: 'F', poGroupKey: 'G',
+    },
+  },
+  ai: {
+    enabled: true,
+    auto_review: true,
+    min_confidence: 90,
+    max_tokens: 1024,
+    review_prompt: 'Review this purchase order for accuracy. Check vendor name, item descriptions, quantities, and unit prices. Flag any anomalies, duplicates, or unusual amounts.',
+    ollama_url: 'http://localhost:11434',
+    ollama_model: 'qwen3.5-coder-35b:latest',
+    claude_model: 'claude-sonnet-4-20250514',
+  },
+  qbo: {
+    environment: 'production',
+    realmId: '',
+    default_memo_template: '',
+    default_po_terms: '',
+  },
+  modules: {
+    purchase_order: { enabled: true, auto_approve: false, require_ai_review: false },
+    invoice: { enabled: false, auto_approve: false },
+    bill: { enabled: false, auto_approve: false },
+    payment: { enabled: false, auto_approve: false },
+  },
+};
+
+function deepMerge(base, override) {
+  if (!override) return base;
+  const result = { ...base };
+  for (const key of Object.keys(override)) {
+    if (
+      override[key] !== null &&
+      typeof override[key] === 'object' &&
+      !Array.isArray(override[key])
+    ) {
+      result[key] = deepMerge(base[key] || {}, override[key]);
+    } else {
+      result[key] = override[key];
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+function SectionCard({ title, children, onSave, saving }) {
+  return (
+    <div className="bg-white rounded-xl shadow-sm">
+      <div className="px-6 py-4 border-b border-gray-100">
+        <h2 className="text-base font-semibold text-atd-dark">{title}</h2>
+      </div>
+      <div className="px-6 py-5 space-y-5">
+        {children}
+        {onSave && (
+          <div className="pt-2 border-t border-gray-100 flex">
+            <button
+              onClick={onSave}
+              disabled={saving}
+              className="flex items-center gap-2 bg-atd-blue hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {saving ? <LoadingSpinner size="sm" color="white" /> : <Save className="h-4 w-4" />}
+              Save
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FieldRow({ label, tooltip, children }) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+      <label className="text-sm font-medium text-gray-700 sm:w-44 flex-shrink-0 flex items-center">
+        {label}
+        {tooltip && <InfoTooltip text={tooltip} />}
+      </label>
+      <div className="flex-1">{children}</div>
+    </div>
+  );
+}
+
+function TextInput({ value, onChange, placeholder, readOnly, className = '' }) {
+  return (
+    <input
+      type="text"
+      value={value || ''}
+      onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+      readOnly={readOnly}
+      placeholder={placeholder}
+      className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue ${
+        readOnly ? 'bg-gray-50 text-gray-500 cursor-default' : ''
+      } ${className}`}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main Component
+// ---------------------------------------------------------------------------
+export default function Settings() {
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [toast, setToast] = useState(null); // { message, type }
+  const [saving, setSaving] = useState({});
+  const [cacheStatus, setCacheStatus] = useState({ vendors: null, items: null });
+  const [sheetTest, setSheetTest] = useState({ status: null, loading: false, message: '' });
+  const [sheetPreview, setSheetPreview] = useState({ data: null, open: false, loading: false, error: null });
+  const [resetConfirm, setResetConfirm] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
+  const showToast = (message, type = 'success') => setToast({ message, type });
+  const dismissToast = useCallback(() => setToast(null), []);
+
+  useEffect(() => {
+    async function load() {
+      setPageLoading(true);
+      try {
+        const res = await api.getSettings();
+        const data = res.settings ?? res.data?.settings ?? res.data ?? res;
+        setSettings(deepMerge(DEFAULT_SETTINGS, data));
+      } catch (err) {
+        setLoadError(err.message || 'Failed to load settings.');
+      } finally {
+        setPageLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  function setNested(path, value) {
+    setSettings((prev) => {
+      const keys = path.split('.');
+      const next = { ...prev };
+      let cur = next;
+      for (let i = 0; i < keys.length - 1; i++) {
+        cur[keys[i]] = { ...cur[keys[i]] };
+        cur = cur[keys[i]];
+      }
+      cur[keys[keys.length - 1]] = value;
+      return next;
+    });
+  }
+
+  async function saveSection(sectionKey, payload) {
+    setSaving((s) => ({ ...s, [sectionKey]: true }));
+    try {
+      await api.updateSettings(payload);
+      showToast('Settings saved.', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to save settings.', 'error');
+    } finally {
+      setSaving((s) => ({ ...s, [sectionKey]: false }));
+    }
+  }
+
+  async function handleResetToDefaults() {
+    setResetting(true);
+    try {
+      await api.updateSettings(BACKEND_DEFAULTS);
+      setSettings(deepMerge(DEFAULT_SETTINGS, BACKEND_DEFAULTS));
+      setResetConfirm(false);
+      showToast('Settings reset to defaults.', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to reset settings.', 'error');
+    } finally {
+      setResetting(false);
+    }
+  }
+
+  async function handleTestSheetConnection() {
+    setSheetTest({ status: null, loading: true, message: '' });
+    try {
+      await api.testSheetConnection();
+      setSheetTest({ status: 'ok', loading: false, message: 'Connection successful.' });
+    } catch (err) {
+      setSheetTest({ status: 'error', loading: false, message: err.message || 'Connection failed.' });
+    }
+  }
+
+  async function handlePreviewSheetData() {
+    setSheetPreview((s) => ({ ...s, loading: true, error: null }));
+    try {
+      const res = await api.previewSheetData();
+      const rows = Array.isArray(res.data ?? res) ? (res.data ?? res) : [];
+      setSheetPreview({ data: rows, open: true, loading: false, error: null });
+    } catch (err) {
+      setSheetPreview({ data: null, open: false, loading: false, error: err.message || 'Preview failed.' });
+    }
+  }
+
+  async function handleRefreshVendors() {
+    setCacheStatus((s) => ({ ...s, vendors: 'loading' }));
+    try {
+      const res = await api.getVendors();
+      const arr = Array.isArray(res.data ?? res) ? (res.data ?? res) : [];
+      setCacheStatus((s) => ({ ...s, vendors: `${arr.length} vendors refreshed.` }));
+    } catch (err) {
+      setCacheStatus((s) => ({ ...s, vendors: `Error: ${err.message}` }));
+    }
+  }
+
+  async function handleRefreshItems() {
+    setCacheStatus((s) => ({ ...s, items: 'loading' }));
+    try {
+      const res = await api.getItems();
+      const arr = Array.isArray(res.data ?? res) ? (res.data ?? res) : [];
+      setCacheStatus((s) => ({ ...s, items: `${arr.length} items refreshed.` }));
+    } catch (err) {
+      setCacheStatus((s) => ({ ...s, items: `Error: ${err.message}` }));
+    }
+  }
+
+  if (pageLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-64 p-6">
+        <LoadingSpinner size="lg" color="atd-blue" />
+      </div>
+    );
+  }
+
+  const gs = settings.google_sheets;
+  const ai = settings.ai;
+  const qbo = settings.qbo;
+  const mods = settings.modules;
+
+  return (
+    <div className="p-6 max-w-3xl mx-auto space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-atd-dark">Settings</h1>
+        <p className="text-gray-500 text-sm mt-1">Configure the ATD QBO Platform</p>
+      </div>
+
+      {loadError && (
+        <div className="flex items-center gap-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-lg px-4 py-3 text-sm">
+          <AlertCircle className="h-5 w-5 flex-shrink-0" />
+          {loadError} Showing default values.
+        </div>
+      )}
+
+      {/* Section 1: Google Sheets */}
+      <SectionCard
+        title="Google Sheets Connection"
+        onSave={() =>
+          saveSection('sheets', {
+            google_sheets: {
+              po_sheet_id: gs.po_sheet_id,
+              po_sheet_tab: gs.po_sheet_tab,
+              header_row: gs.header_row,
+              data_start_row: gs.data_start_row,
+              po_column_mapping: gs.po_column_mapping,
+            },
+          })
+        }
+        saving={saving.sheets}
+      >
+        <FieldRow
+          label="Sheet ID"
+          tooltip="The Google Sheets spreadsheet ID found in the sheet URL between /d/ and /edit."
+        >
+          <TextInput
+            value={gs.po_sheet_id}
+            onChange={(v) => setNested('google_sheets.po_sheet_id', v)}
+            placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
+          />
+        </FieldRow>
+        <FieldRow
+          label="Tab Name"
+          tooltip="The name of the tab within the spreadsheet that contains PO data. Defaults to Sheet1."
+        >
+          <TextInput
+            value={gs.po_sheet_tab}
+            onChange={(v) => setNested('google_sheets.po_sheet_tab', v)}
+            placeholder="Sheet1"
+          />
+        </FieldRow>
+        <FieldRow
+          label="Header Row"
+          tooltip="The row number that contains column headers. Defaults to 1."
+        >
+          <input
+            type="number"
+            min="1"
+            value={gs.header_row ?? 1}
+            onChange={(e) => setNested('google_sheets.header_row', parseInt(e.target.value, 10) || 1)}
+            className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
+          />
+        </FieldRow>
+        <FieldRow
+          label="Data Start Row"
+          tooltip="The row number where actual data begins. Defaults to 2."
+        >
+          <input
+            type="number"
+            min="1"
+            value={gs.data_start_row ?? 2}
+            onChange={(e) => setNested('google_sheets.data_start_row', parseInt(e.target.value, 10) || 1)}
+            className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
+          />
+        </FieldRow>
+
+        <div>
+          <p className="text-sm font-medium text-gray-700 mb-3 flex items-center">
+            Column Mapping
+            <InfoTooltip text="Map each PO field to the corresponding column letter in your Google Sheet." />
+          </p>
+          <div className="overflow-x-auto">
+            <table className="text-sm">
+              <thead>
+                <tr className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <th className="pb-2 pr-10 text-left">Field Name</th>
+                  <th className="pb-2 text-left">Column Letter</th>
+                </tr>
+              </thead>
+              <tbody>
+                {COLUMN_MAPPING_FIELDS.map(({ key, label }) => (
+                  <tr key={key}>
+                    <td className="pr-10 py-1 text-gray-600">{label}</td>
+                    <td className="py-1">
+                      <select
+                        value={gs.po_column_mapping?.[key] || 'A'}
+                        onChange={(e) =>
+                          setNested(`google_sheets.po_column_mapping.${key}`, e.target.value)
+                        }
+                        className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
+                      >
+                        {COLUMNS.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={handleTestSheetConnection}
+              disabled={sheetTest.loading}
+              className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+            >
+              {sheetTest.loading ? <LoadingSpinner size="sm" color="gray" /> : null}
+              Test Connection
+            </button>
+            {sheetTest.status === 'ok' && (
+              <span className="flex items-center gap-1.5 text-green-600 text-sm">
+                <CheckCircle className="h-4 w-4" /> {sheetTest.message}
+              </span>
+            )}
+            {sheetTest.status === 'error' && (
+              <span className="flex items-center gap-1.5 text-red-600 text-sm">
+                <X className="h-4 w-4" /> {sheetTest.message}
+              </span>
+            )}
+            <button
+              onClick={handlePreviewSheetData}
+              disabled={sheetPreview.loading}
+              className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+            >
+              {sheetPreview.loading ? <LoadingSpinner size="sm" color="gray" /> : null}
+              Preview Data
+            </button>
+          </div>
+          {sheetPreview.error && (
+            <p className="text-sm text-red-600">{sheetPreview.error}</p>
+          )}
+          {sheetPreview.data && (
+            <div>
+              <button
+                onClick={() => setSheetPreview((s) => ({ ...s, open: !s.open }))}
+                className="flex items-center gap-1.5 text-sm text-atd-blue hover:text-atd-blue-light font-medium"
+              >
+                {sheetPreview.open ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
+                {sheetPreview.open ? 'Hide' : 'Show'} Preview ({sheetPreview.data.length} rows)
+              </button>
+              {sheetPreview.open && sheetPreview.data.length > 0 && (
+                <div className="mt-2 overflow-x-auto max-h-64 border border-gray-200 rounded-lg">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 sticky top-0">
+                      <tr>
+                        {Object.keys(sheetPreview.data[0]).map((col) => (
+                          <th key={col} className="px-3 py-2 text-left text-gray-600 font-semibold whitespace-nowrap">
+                            {col}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {sheetPreview.data.map((row, i) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          {Object.values(row).map((val, j) => (
+                            <td key={j} className="px-3 py-1.5 text-gray-700 whitespace-nowrap">
+                              {val ?? '-'}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {sheetPreview.open && sheetPreview.data.length === 0 && (
+                <p className="mt-2 text-sm text-gray-400">No data rows found in sheet.</p>
+              )}
+            </div>
+          )}
+        </div>
+      </SectionCard>
+
+      {/* Section 2: AI Configuration */}
+      <SectionCard
+        title="AI Configuration"
+        onSave={() =>
+          saveSection('ai', {
+            ai: {
+              enabled: ai.enabled,
+              auto_review: ai.auto_review,
+              min_confidence: ai.min_confidence,
+              max_tokens: ai.max_tokens,
+              review_prompt: ai.review_prompt,
+              ollama_url: ai.ollama_url,
+              ollama_model: ai.ollama_model,
+              claude_model: ai.claude_model,
+            },
+          })
+        }
+        saving={saving.ai}
+      >
+        <FieldRow
+          label="AI Enabled"
+          tooltip="When enabled, AI will review transactions before they are submitted to QuickBooks."
+        >
+          <Toggle
+            id="ai-enabled"
+            checked={!!ai.enabled}
+            onChange={(v) => setNested('ai.enabled', v)}
+          />
+        </FieldRow>
+        <FieldRow
+          label="Auto Review"
+          tooltip="Automatically run AI review on every new transaction. Requires AI to be enabled."
+        >
+          <Toggle
+            id="ai-auto-review"
+            checked={!!ai.auto_review}
+            onChange={(v) => setNested('ai.auto_review', v)}
+            disabled={!ai.enabled}
+          />
+        </FieldRow>
+        <FieldRow
+          label="Min Confidence (%)"
+          tooltip="Minimum confidence score (0-100) for Ollama responses. Below this threshold, the request escalates to Claude API."
+        >
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={ai.min_confidence ?? 90}
+            onChange={(e) => setNested('ai.min_confidence', parseInt(e.target.value, 10) || 70)}
+            className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
+          />
+        </FieldRow>
+        <FieldRow
+          label="Ollama URL"
+          tooltip="URL of your local Ollama instance. Ollama is the free, local AI provider used as the primary option."
+        >
+          <div className="flex items-center gap-3">
+            <TextInput
+              value={ai.ollama_url}
+              onChange={(v) => setNested('ai.ollama_url', v)}
+              placeholder="http://localhost:11434"
+            />
+            <div className="flex items-center gap-1.5 whitespace-nowrap">
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-400" />
+              <span className="text-xs text-gray-400">Status unknown</span>
+            </div>
+          </div>
+        </FieldRow>
+        <FieldRow
+          label="Ollama Model"
+          tooltip="The Ollama model to use for AI reviews. llama3 is recommended for best results."
+        >
+          <TextInput
+            value={ai.ollama_model}
+            onChange={(v) => setNested('ai.ollama_model', v)}
+            placeholder="llama3"
+          />
+        </FieldRow>
+        <FieldRow
+          label="Claude Model"
+          tooltip="The Claude API model used as a fallback when Ollama is unavailable or confidence is below the threshold."
+        >
+          <TextInput
+            value={ai.claude_model}
+            onChange={(v) => setNested('ai.claude_model', v)}
+            placeholder="claude-sonnet-4-20250514"
+          />
+        </FieldRow>
+        <FieldRow
+          label="Max Tokens"
+          tooltip="Maximum number of tokens for AI responses. Higher values allow longer, more detailed reviews."
+        >
+          <input
+            type="number"
+            min="64"
+            max="8192"
+            value={ai.max_tokens ?? 2000}
+            onChange={(e) => setNested('ai.max_tokens', parseInt(e.target.value, 10) || 2000)}
+            className="w-28 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
+          />
+        </FieldRow>
+        <FieldRow
+          label="AI Review Prompt"
+          tooltip="The system prompt sent to the AI when reviewing transactions. Customize to focus on specific checks."
+        >
+          <textarea
+            rows={4}
+            value={ai.review_prompt || ''}
+            onChange={(e) => setNested('ai.review_prompt', e.target.value)}
+            placeholder="Review this purchase order for accuracy..."
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue resize-y"
+          />
+        </FieldRow>
+      </SectionCard>
+
+      {/* Section 3: QBO Connection */}
+      <SectionCard
+        title="QuickBooks Connection"
+        onSave={() =>
+          saveSection('qbo', {
+            qbo: {
+              environment: qbo.environment,
+              default_memo_template: qbo.default_memo_template,
+              default_po_terms: qbo.default_po_terms,
+            },
+          })
+        }
+        saving={saving.qbo}
+      >
+        <FieldRow
+          label="Environment"
+          tooltip="Sandbox uses test data only. Switch to Production only when ready to create real transactions in QuickBooks."
+        >
+          <div className="flex items-center gap-6">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                value="sandbox"
+                checked={qbo.environment === 'sandbox'}
+                onChange={() => setNested('qbo.environment', 'sandbox')}
+                className="text-atd-blue focus:ring-atd-blue"
+              />
+              <span className="text-sm text-gray-700">Sandbox</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                value="production"
+                checked={qbo.environment === 'production'}
+                onChange={() => setNested('qbo.environment', 'production')}
+                className="text-atd-blue focus:ring-atd-blue"
+              />
+              <span className="text-sm text-gray-700">Production</span>
+              {qbo.environment === 'production' && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700 border border-red-300">
+                  LIVE
+                </span>
+              )}
+            </label>
+          </div>
+        </FieldRow>
+
+        <FieldRow
+          label="Realm ID"
+          tooltip="Your QuickBooks company ID, assigned automatically when you connect via OAuth. Read-only."
+        >
+          <TextInput
+            value={qbo.realmId || '(not connected)'}
+            readOnly
+          />
+        </FieldRow>
+
+        <FieldRow
+          label="Default Memo Template"
+          tooltip="Default memo text applied to new purchase orders. Can be overridden per PO."
+        >
+          <TextInput
+            value={qbo.default_memo_template}
+            onChange={(v) => setNested('qbo.default_memo_template', v)}
+            placeholder="e.g., ATD PO - {{vendor}}"
+          />
+        </FieldRow>
+        <FieldRow
+          label="Default PO Terms"
+          tooltip="Default payment terms applied to new purchase orders (e.g., Net 30, COD)."
+        >
+          <TextInput
+            value={qbo.default_po_terms}
+            onChange={(v) => setNested('qbo.default_po_terms', v)}
+            placeholder="e.g., Net 30"
+          />
+        </FieldRow>
+
+        <FieldRow label="Last Refreshed">
+          <TextInput value={settings?.qbo?.lastRefreshed || 'Connect to QBO to see token info'} readOnly />
+        </FieldRow>
+        <FieldRow label="Token Expires At">
+          <TextInput value={settings?.qbo?.tokenExpiresAt || 'Connect to QBO to see token info'} readOnly />
+        </FieldRow>
+        <p className="text-xs text-gray-400">
+          Token status will display here after OAuth setup is complete.
+        </p>
+
+        <div className="flex flex-wrap gap-3 pt-1">
+          <div className="flex flex-col gap-1">
+            <button
+              onClick={handleRefreshVendors}
+              disabled={cacheStatus.vendors === 'loading'}
+              className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+            >
+              <RefreshCw className={`h-4 w-4 ${cacheStatus.vendors === 'loading' ? 'animate-spin' : ''}`} />
+              Refresh Vendor Cache
+            </button>
+            {cacheStatus.vendors && cacheStatus.vendors !== 'loading' && (
+              <span className="text-xs text-gray-500 pl-1">{cacheStatus.vendors}</span>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <button
+              onClick={handleRefreshItems}
+              disabled={cacheStatus.items === 'loading'}
+              className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+            >
+              <RefreshCw className={`h-4 w-4 ${cacheStatus.items === 'loading' ? 'animate-spin' : ''}`} />
+              Refresh Item Cache
+            </button>
+            {cacheStatus.items && cacheStatus.items !== 'loading' && (
+              <span className="text-xs text-gray-500 pl-1">{cacheStatus.items}</span>
+            )}
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* Section 4: Module Toggles */}
+      <SectionCard
+        title="Module Settings"
+        onSave={() =>
+          saveSection('modules', {
+            modules: mods,
+          })
+        }
+        saving={saving.modules}
+      >
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100">
+                <th className="pb-3 pr-6">Module</th>
+                <th className="pb-3 pr-6">
+                  <span className="flex items-center">
+                    Enabled
+                    <InfoTooltip text="Toggle whether this module is active and available for use." />
+                  </span>
+                </th>
+                <th className="pb-3 pr-6">
+                  <span className="flex items-center">
+                    Auto Approve
+                    <InfoTooltip text="When enabled, approved transactions are automatically pushed to QuickBooks without manual review." />
+                  </span>
+                </th>
+                <th className="pb-3 pr-6">
+                  <span className="flex items-center">
+                    Require AI Review
+                    <InfoTooltip text="When enabled, transactions must pass AI review before approval." />
+                  </span>
+                </th>
+                <th className="pb-3">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {MODULE_ROWS.map(({ key, label, available }) => {
+                const mod = mods[key] || {};
+                const enabled = !!mod.enabled;
+                const autoApprove = !!mod.auto_approve;
+                const requireAiReview = !!mod.require_ai_review;
+                return (
+                  <tr key={key} className={`relative ${!available ? 'opacity-50' : ''}`}>
+                    <td className="py-3 pr-6 font-medium text-atd-dark">
+                      <div className="flex items-center gap-2">
+                        {label}
+                        {!available && (
+                          <span className="text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded whitespace-nowrap">
+                            Coming Soon
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3 pr-6">
+                      <Toggle
+                        id={`mod-enabled-${key}`}
+                        checked={enabled}
+                        onChange={(v) => setNested(`modules.${key}.enabled`, v)}
+                        disabled={!available}
+                      />
+                    </td>
+                    <td className="py-3 pr-6">
+                      <Toggle
+                        id={`mod-auto-${key}`}
+                        checked={autoApprove}
+                        onChange={(v) => setNested(`modules.${key}.auto_approve`, v)}
+                        disabled={!available || !enabled}
+                      />
+                    </td>
+                    <td className="py-3 pr-6">
+                      <Toggle
+                        id={`mod-ai-${key}`}
+                        checked={requireAiReview}
+                        onChange={(v) => setNested(`modules.${key}.require_ai_review`, v)}
+                        disabled={!available || !enabled}
+                      />
+                    </td>
+                    <td className="py-3">
+                      {enabled ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                          Active
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                          Disabled
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
+
+      {/* Reset to Defaults */}
+      <div className="bg-white rounded-xl shadow-sm px-6 py-5">
+        <h2 className="text-base font-semibold text-atd-dark mb-1">Danger Zone</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Reset all settings back to their original defaults. This cannot be undone.
+        </p>
+        <button
+          onClick={() => setResetConfirm(true)}
+          className="flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+        >
+          <RotateCcw className="h-4 w-4" />
+          Reset to Defaults
+        </button>
+      </div>
+
+      {/* Reset Confirmation Dialog */}
+      {resetConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0 h-10 w-10 rounded-full bg-red-100 flex items-center justify-center">
+                <AlertCircle className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-atd-dark">Reset all settings?</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  This will overwrite all current settings with the original defaults. Your Google Sheet ID, AI configuration, and module toggles will all be reset. This cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setResetConfirm(false)}
+                disabled={resetting}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetToDefaults}
+                disabled={resetting}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {resetting ? <LoadingSpinner size="sm" color="white" /> : <RotateCcw className="h-4 w-4" />}
+                Yes, Reset
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <Toast message={toast.message} type={toast.type} onDismiss={dismissToast} />
+      )}
+    </div>
+  );
+}

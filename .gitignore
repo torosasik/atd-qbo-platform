@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+functions/node_modules/
+frontend/node_modules/
+
+# Firebase
+.firebase/
+firebase-debug.log
+ui-debug.log
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Build
+frontend/build/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Screenshots - User-provided, never upload
+"DO NOT UPLOAD - SCREENSHOOTS"/
+screenshots/
+
+# Credentials - NEVER commit these
+**/credentials.json
+**/service-account.json
+**/secrets/
+functions/.runtimeconfig.json
+functions/.env

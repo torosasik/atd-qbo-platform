@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check /Users/torosasik/Projects/atd-qbo-platform/functions/api/routes.js)",
+      "Bash(node --check /Users/torosasik/Projects/atd-qbo-platform/functions/index.js)",
+      "Bash(node --check /Users/torosasik/Projects/atd-qbo-platform/functions/core/settings.js)",
+      "Bash(node --check /Users/torosasik/Projects/atd-qbo-platform/functions/core/qbo-auth.js)",
+      "Bash(node --check /Users/torosasik/Projects/atd-qbo-platform/functions/core/cache.js)"
+    ]
+  }
+}

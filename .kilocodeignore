@@ -1,0 +1,50 @@
+# Images - never send to AI API (too large, not useful as text)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.ico
+*.svg
+*.bmp
+
+# Screenshot directories
+DO NOT UPLOAD - SCREENSHOOTS/
+screenshots/
+docs/screenshots/
+
+# Lock files - huge, never useful for AI context
+package-lock.json
+**/package-lock.json
+yarn.lock
+**/yarn.lock
+pnpm-lock.yaml
+
+# Build artifacts
+frontend/dist/
+frontend/build/
+.firebase/
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# OS / IDE
+.DS_Store
+**/.DS_Store
+.vscode/
+
+# Logs
+*.log
+firestore-debug.log
+
+# Large binary / data files
+*.db
+*.sqlite
+*.vscdb
+
+# Kilo Code internal cache (don't recurse into it)
+.kilocode/cache/
+
+# Broken artifact directories (accidental creation)
+{.claude/
