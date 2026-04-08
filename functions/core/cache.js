@@ -172,6 +172,30 @@ async function refreshAccounts(realmId) {
   }
 }
 
+async function refreshCustomers(realmId) {
+  try {
+    const { records: customers, intuitTid } = await fetchAllFromQbo(realmId, 'Customer');
+    const docId = `customers_${realmId}`;
+
+    await saveToCache(docId, realmId, customers);
+
+    await logAction('cache', 'refresh-customers', 'success', {
+      realmId,
+      count: customers.length,
+      intuitTid
+    });
+
+    return customers;
+  } catch (err) {
+    await logAction('cache', 'refresh-customers', 'error', {
+      realmId,
+      error: err.message,
+      intuitTid: err.intuitTid || null
+    });
+    throw err;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public get functions (check cache first, refresh if stale)
 // ---------------------------------------------------------------------------
@@ -250,6 +274,78 @@ async function getCachedItems(realmId) {
   }
 }
 
+async function getCachedCustomers(realmId) {
+  const db = getFirestore();
+  const docId = `customers_${realmId}`;
+
+  try {
+    const docSnap = await db.collection(CACHE_COLLECTION).doc(docId).get();
+    const cacheData = docSnap.exists ? docSnap.data() : null;
+
+    if (!cacheData || isCacheStale(cacheData.fetchedAt)) {
+      return await refreshCustomers(realmId);
+    }
+
+    return cacheData.data;
+  } catch (err) {
+    await logAction('cache', 'get-cached-customers', 'error', {
+      realmId,
+      error: err.message
+    });
+
+    try {
+      const docSnap = await db.collection(CACHE_COLLECTION).doc(docId).get();
+      if (docSnap.exists) {
+        await logAction('cache', 'get-cached-customers', 'warn', {
+          realmId,
+          message: 'Returning stale customer cache after refresh failure.'
+        });
+        return docSnap.data().data;
+      }
+    } catch (fallbackErr) {
+      console.error('[getCachedCustomers] Error fetching stale cache fallback:', fallbackErr.message);
+    }
+
+    console.error('[getCachedCustomers] Error fetching customers:', err.message);
+    return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// fetchOpenInvoices
+// Fetches open (unpaid) invoices for a specific customer from QBO.
+// This is NOT cached long-term since invoice balances change frequently.
+// ---------------------------------------------------------------------------
+
+async function fetchOpenInvoices(realmId, customerId) {
+  try {
+    // Validate customerId is a non-empty string before using in query
+    if (!customerId || typeof customerId !== 'string' || !/^\d+$/.test(customerId.trim())) {
+      throw new Error(`Invalid customerId: '${customerId}'. Expected a numeric string.`);
+    }
+    const query = `SELECT * FROM Invoice WHERE CustomerRef = '${customerId}' AND Balance > '0' MAXRESULTS 200`;
+    const { queryResponse, intuitTid } = await fetchFromQbo(realmId, query);
+    const invoices = queryResponse?.Invoice || [];
+
+    await logAction('cache', 'fetch-open-invoices', 'success', {
+      realmId,
+      customerId,
+      count: invoices.length,
+      intuitTid,
+    });
+
+    return invoices;
+  } catch (err) {
+    await logAction('cache', 'fetch-open-invoices', 'error', {
+      realmId,
+      customerId,
+      error: err.message,
+      intuitTid: err.intuitTid || null,
+    });
+    throw err;
+  }
+}
+
 async function getCachedAccounts(realmId) {
   const db = getFirestore();
   const docId = `accounts_${realmId}`;
@@ -287,11 +383,62 @@ async function getCachedAccounts(realmId) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// fetchUncategorizedExpenses
+// Fetches Purchase transactions from QBO and filters for uncategorized ones.
+// "Uncategorized" = lines with AccountRef pointing to "Uncategorized Expense"
+// or lines missing an AccountRef entirely.
+// ---------------------------------------------------------------------------
+
+async function fetchUncategorizedExpenses(realmId) {
+  try {
+    // Fetch all Purchase (expense) transactions — QBO doesn't support filtering
+    // by AccountRef in queries, so we fetch and filter client-side.
+    const query = `SELECT * FROM Purchase MAXRESULTS 500`;
+    const { queryResponse, intuitTid } = await fetchFromQbo(realmId, query);
+    const purchases = queryResponse?.Purchase || [];
+
+    // Filter for expenses that have at least one uncategorized line
+    const uncategorized = purchases.filter((purchase) => {
+      const lines = purchase.Line || [];
+      return lines.some((line) => {
+        if (line.DetailType === 'AccountBasedExpenseLineDetail') {
+          const acctRef = line.AccountBasedExpenseLineDetail?.AccountRef;
+          if (!acctRef || !acctRef.value) return true;
+          // Check for "Uncategorized Expense" account name
+          if ((acctRef.name || '').toLowerCase().includes('uncategorized')) return true;
+        }
+        return false;
+      });
+    });
+
+    await logAction('cache', 'fetch-uncategorized-expenses', 'success', {
+      realmId,
+      totalPurchases: purchases.length,
+      uncategorizedCount: uncategorized.length,
+      intuitTid,
+    });
+
+    return uncategorized;
+  } catch (err) {
+    await logAction('cache', 'fetch-uncategorized-expenses', 'error', {
+      realmId,
+      error: err.message,
+      intuitTid: err.intuitTid || null,
+    });
+    throw err;
+  }
+}
+
 module.exports = {
   getCachedVendors,
   getCachedItems,
   getCachedAccounts,
+  getCachedCustomers,
+  fetchOpenInvoices,
+  fetchUncategorizedExpenses,
   refreshVendors,
   refreshItems,
-  refreshAccounts
+  refreshAccounts,
+  refreshCustomers
 };

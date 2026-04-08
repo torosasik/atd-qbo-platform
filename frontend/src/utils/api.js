@@ -53,6 +53,39 @@ export const api = {
   getPoHistory: () => api.get('/po/history'),
   createPo: (body) => api.post('/po/create', body),
   approveDraft: (draftId) => api.post(`/po/approve/${draftId}`, {}),
+  rejectDraft: (draftId) => api.del(`/po/drafts/${draftId}`),
+
+  // Invoices
+  getCustomers: () => api.get('/customers'),
+  getInvoiceHistory: () => api.get('/invoices'),
+  getInvoiceDrafts: () => api.get('/invoices/drafts'),
+  createInvoice: (body) => api.post('/invoices', body),
+  approveInvoiceDraft: (draftId) => api.post(`/invoices/drafts/${draftId}/approve`, {}),
+  rejectInvoiceDraft: (draftId) => api.post(`/invoices/drafts/${draftId}/reject`, {}),
+
+  // Bills
+  getBillHistory: () => api.get('/bills'),
+  getBillDrafts: () => api.get('/bills/drafts'),
+  createBill: (body) => api.post('/bills', body),
+  approveBillDraft: (draftId) => api.post(`/bills/drafts/${draftId}/approve`, {}),
+  rejectBillDraft: (draftId) => api.post(`/bills/drafts/${draftId}/reject`, {}),
+
+  // Payments
+  getPaymentHistory: () => api.get('/payments'),
+  getPaymentDrafts: () => api.get('/payments/drafts'),
+  getOpenInvoices: (customerId) => api.get(`/open-invoices/${customerId}`),
+  createPayment: (body) => api.post('/payments', body),
+  approvePaymentDraft: (draftId) => api.post(`/payments/drafts/${draftId}/approve`, {}),
+  rejectPaymentDraft: (draftId) => api.post(`/payments/drafts/${draftId}/reject`, {}),
+
+  // Expenses (categorization)
+  getUncategorizedExpenses: () => api.get('/expenses/uncategorized'),
+  getExpenseDrafts: () => api.get('/expenses/drafts'),
+  categorizeExpense: (expenseId, suggestedAccountId) => api.post('/expenses/categorize', { expenseId, suggestedAccountId }),
+  approveExpenseDraft: (draftId) => api.post(`/expenses/drafts/${draftId}/approve`, {}),
+  rejectExpenseDraft: (draftId) => api.post(`/expenses/drafts/${draftId}/reject`, {}),
+  getExpenseHistory: () => api.get('/expenses'),
+  getAccounts: () => api.get('/accounts'),
 
   sendAiChat: (message) => api.post('/ai/chat', { message }),
 

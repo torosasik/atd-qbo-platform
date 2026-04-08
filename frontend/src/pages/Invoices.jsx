@@ -9,8 +9,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Trash2,
-  MapPin,
-  Mail,
   Search,
 } from 'lucide-react';
 import { api } from '../utils/api';
@@ -40,8 +38,6 @@ function StatusBadge({ status }) {
     </span>
   );
 }
-
-const SHIP_TO_ADDRESS = 'American Tile Depot, 1440 S State College Blvd Ste 6G, Anaheim, CA 92806';
 
 const UNIT_OPTIONS = ['Sq Ft', 'Box', 'Piece', 'Each', 'Linear Ft', 'Pallet', 'Sheet', 'Case', 'Roll', 'Other'];
 
@@ -133,25 +129,15 @@ function SearchableItemDropdown({ items, value, onChange, onCreateNew }) {
     return item.Sku ? `${item.Sku} - ${item.Name}` : item.Name;
   }
 
-  // Advanced search: multi-token, prefix-aware, dimension-normalized, relevance-scored.
-  //
-  // Features:
-  //   1. Each search word is matched independently (any order)
-  //   2. Each token can match as an exact substring OR as a prefix of any word in the item
-  //   3. Dimension shorthand "12x24" is matched against "12 X 24" style names
-  //   4. Partial matches (most-but-not-all tokens) are shown below full matches
-  //   5. Results sorted by relevance; up to 30 shown
   const filteredItems = (() => {
     const raw = search.trim().toLowerCase();
     if (!raw) return items.slice(0, 30);
 
-    // Normalize dimension expressions: "12x24" → "12x24", "12 X 24" → "12x24"
     const normalizeDims = (s) => s.replace(/(\d+)\s*[xX×]\s*(\d+)/g, '$1x$2');
 
     const normalizedRaw = normalizeDims(raw);
     const tokens = normalizedRaw.split(/\s+/).filter(Boolean);
 
-    // Returns a per-token match score: 2=exact substring, 1=prefix of a word, 0=no match
     function tokenMatchScore(token, haystack, haystackWords) {
       if (haystack.includes(token)) return 2;
       if (haystackWords.some((w) => w.startsWith(token))) return 1;
@@ -169,24 +155,18 @@ function SearchableItemDropdown({ items, value, onChange, onCreateNew }) {
       const matchedCount = tScores.filter((s) => s > 0).length;
       if (matchedCount === 0) return null;
 
-      // Base relevance score
       let score = tScores.reduce((sum, s) => sum + s, 0);
 
-      // Bonus for matching all tokens
       if (matchedCount === tokens.length) {
         score += 20;
-        // Extra bonus: full phrase found in name or sku
         if (name.includes(normalizedRaw) || sku.includes(normalizedRaw)) score += 10;
-        // Extra bonus: name/sku starts with query
         if (name.startsWith(normalizedRaw) || sku.startsWith(normalizedRaw)) score += 5;
-        // Extra bonus: tokens all in name (not just description)
         if (tScores.every((_, i) => tokenMatchScore(tokens[i], name, name.split(/[\s\-\/,()+]+/).filter(Boolean)) > 0)) score += 3;
       }
 
       return { item, score, matchedCount };
     }).filter(Boolean);
 
-    // Sort: full matches first (by score), then partial matches (by score)
     scored.sort((a, b) => {
       if (a.matchedCount !== b.matchedCount) return b.matchedCount - a.matchedCount;
       return b.score - a.score;
@@ -195,7 +175,6 @@ function SearchableItemDropdown({ items, value, onChange, onCreateNew }) {
     return scored.slice(0, 30).map(({ item }) => item);
   })();
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -248,7 +227,6 @@ function SearchableItemDropdown({ items, value, onChange, onCreateNew }) {
 
       {isOpen && (
         <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg">
-          {/* Items list */}
           <div className="overflow-y-auto max-h-60">
             {filteredItems.length === 0 ? (
               <div className="px-3 py-2 text-sm text-gray-400 text-center">
@@ -273,7 +251,6 @@ function SearchableItemDropdown({ items, value, onChange, onCreateNew }) {
             )}
           </div>
 
-          {/* Create new option */}
           {search && (
             <div className="border-t border-gray-100">
               <button
@@ -356,7 +333,6 @@ function CreateNewItemModal({ isOpen, onClose, onSuccess, initialName }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h3 className="text-lg font-semibold text-atd-dark">Create New Item</h3>
           <button
@@ -368,7 +344,6 @@ function CreateNewItemModal({ isOpen, onClose, onSuccess, initialName }) {
           </button>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           {error && (
             <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-700">
@@ -377,7 +352,6 @@ function CreateNewItemModal({ isOpen, onClose, onSuccess, initialName }) {
             </div>
           )}
 
-          {/* Item Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Item Name <span className="text-red-500">*</span>
@@ -393,7 +367,6 @@ function CreateNewItemModal({ isOpen, onClose, onSuccess, initialName }) {
             />
           </div>
 
-          {/* Item Type */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Item Type
@@ -407,14 +380,8 @@ function CreateNewItemModal({ isOpen, onClose, onSuccess, initialName }) {
               <option value="Inventory">Inventory</option>
               <option value="Service">Service</option>
             </select>
-            <p className="mt-1 text-xs text-gray-500">
-              {formData.type === 'NonInventory' && 'Item not tracked in inventory'}
-              {formData.type === 'Inventory' && 'Tracked in inventory (requires QBO setup)'}
-              {formData.type === 'Service' && 'A service provided'}
-            </p>
           </div>
 
-          {/* Description */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Description
@@ -428,7 +395,6 @@ function CreateNewItemModal({ isOpen, onClose, onSuccess, initialName }) {
             />
           </div>
 
-          {/* Unit Price */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Unit Price
@@ -447,7 +413,6 @@ function CreateNewItemModal({ isOpen, onClose, onSuccess, initialName }) {
             </div>
           </div>
 
-          {/* Actions */}
           <div className="flex justify-end gap-3 pt-2">
             <button
               type="button"
@@ -475,21 +440,21 @@ function CreateNewItemModal({ isOpen, onClose, onSuccess, initialName }) {
 // ---------------------------------------------------------------------------
 // Tab 1: Create New
 // ---------------------------------------------------------------------------
-function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHistory, onRefreshItems }) {
+function CreateTab({ customers, items, customersLoading, onSwitchToHistory, onRefreshItems }) {
   const [form, setForm] = useState({
-    vendorId: '',
-    vendorName: '',
-    vendorEmail: '',
+    customerId: '',
+    customerName: '',
+    customerEmail: '',
     txnDate: getTodayDate(),
     memo: '',
-    vendorMessage: '',
-    poNumber: '',
+    customerMessage: '',
+    invoiceNumber: '',
     lines: [emptyLine()],
     autoApprove: false,
     aiEnabled: true,
   });
-  const [vendorSearch, setVendorSearch] = useState('');
-  const [vendorOpen, setVendorOpen] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerOpen, setCustomerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
   const [createItemModalOpen, setCreateItemModalOpen] = useState(false);
@@ -498,55 +463,50 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
 
   function resetForm() {
     setForm({
-      vendorId: '',
-      vendorName: '',
-      vendorEmail: '',
+      customerId: '',
+      customerName: '',
+      customerEmail: '',
       txnDate: getTodayDate(),
       memo: '',
-      vendorMessage: '',
-      poNumber: '',
+      customerMessage: '',
+      invoiceNumber: '',
       lines: [emptyLine()],
       autoApprove: false,
       aiEnabled: true,
     });
-    setVendorSearch('');
-    setVendorOpen(false);
+    setCustomerSearch('');
+    setCustomerOpen(false);
   }
 
-  const filteredVendors = useMemo(() => {
-    if (!vendorSearch.trim()) return vendors;
-    const search = vendorSearch.toLowerCase();
-    return vendors.filter((v) => v.DisplayName?.toLowerCase().includes(search));
-  }, [vendors, vendorSearch]);
+  const filteredCustomers = useMemo(() => {
+    if (!customerSearch.trim()) return customers;
+    const search = customerSearch.toLowerCase();
+    return customers.filter((c) => c.DisplayName?.toLowerCase().includes(search));
+  }, [customers, customerSearch]);
 
-  const vendorDropdownRef = useRef(null);
+  const customerDropdownRef = useRef(null);
 
-  // Close vendor dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event) {
-      if (vendorDropdownRef.current && !vendorDropdownRef.current.contains(event.target)) {
-        setVendorOpen(false);
-        setVendorSearch('');
+      if (customerDropdownRef.current && !customerDropdownRef.current.contains(event.target)) {
+        setCustomerOpen(false);
+        setCustomerSearch('');
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Handle creating a new item
   function handleCreateNewItem(searchTerm) {
     setCreateItemSearchTerm(searchTerm);
     setCreateItemModalOpen(true);
   }
 
-  // Handle successful item creation
   async function handleItemCreated(newItem) {
     setCreateItemModalOpen(false);
-    // Refresh items list
     if (onRefreshItems) {
       await onRefreshItems();
     }
-    // Select the new item in the first empty line
     setForm((f) => {
       const lines = f.lines.map((l) => {
         if (!l.itemId) {
@@ -576,7 +536,6 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
       lines: f.lines.map((l) => {
         if (l._id !== id) return l;
         if (key === 'item') {
-          // val is { id, name, sku } from SearchableItemDropdown
           return {
             ...l,
             itemId: val.id,
@@ -606,8 +565,7 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!form.poNumber?.trim()) { setResult({ type: 'error', message: 'PO Number is required.' }); return; }
-    if (!form.vendorId) { setResult({ type: 'error', message: 'Please select a vendor.' }); return; }
+    if (!form.customerId) { setResult({ type: 'error', message: 'Please select a customer.' }); return; }
     const validLines = form.lines.filter((l) => l.description.trim() && parseFloat(l.qty) > 0);
     if (validLines.length === 0) {
       setResult({ type: 'error', message: 'At least one line item needs a description and quantity greater than 0.' });
@@ -617,12 +575,12 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
     setResult(null);
     try {
       const payload = {
-        poNumber: form.poNumber.trim(),
-        vendorId: form.vendorId,
-        vendorName: form.vendorName,
+        invoiceNumber: form.invoiceNumber.trim(),
+        customerId: form.customerId,
+        customerName: form.customerName,
         date: form.txnDate,
         memo: form.memo,
-        vendorMessage: form.vendorMessage,
+        customerMessage: form.customerMessage,
         lines: validLines.map((l) => ({
           itemId: l.itemId,
           sku: l.sku,
@@ -634,13 +592,13 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
         autoApprove: form.autoApprove,
         aiEnabled: form.aiEnabled,
       };
-      const res = await api.createPo(payload);
+      const res = await api.createInvoice(payload);
 
       if (res.aiReview?.flagged) {
-        setResult({ type: 'ai', message: 'AI flagged this PO.', data: res });
+        setResult({ type: 'ai', message: 'AI flagged this invoice.', data: res });
       } else if (form.autoApprove) {
-        const poId = res.data?.DocNumber || res.data?.Id || form.poNumber;
-        setResult({ type: 'success', message: `PO #${poId} pushed to QBO successfully.`, data: res });
+        const invId = res.data?.DocNumber || res.data?.Id || form.invoiceNumber || 'N/A';
+        setResult({ type: 'success', message: `Invoice #${invId} pushed to QBO successfully.`, data: res });
         resetForm();
         setTimeout(() => onSwitchToHistory?.(), 2000);
       } else {
@@ -650,15 +608,10 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
       }
     } catch (err) {
       const fix = err.fix ? ` ${err.fix}` : '';
-      setResult({ type: 'error', message: (err.message || 'Failed to submit PO.') + fix });
+      setResult({ type: 'error', message: (err.message || 'Failed to submit invoice.') + fix });
     } finally {
       setSubmitting(false);
     }
-  }
-
-  // When PO date changes
-  function handleTxnDateChange(val) {
-    setForm((f) => ({ ...f, txnDate: val }));
   }
 
   return (
@@ -680,21 +633,18 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
         <div className="bg-yellow-50 border border-yellow-300 rounded-lg px-4 py-3 text-sm">
           <div className="flex items-start gap-3 text-yellow-800 mb-2">
             <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
-            <strong>AI Review Flagged This PO</strong>
+            <strong>AI Review Flagged This Invoice</strong>
           </div>
-          {result.data?.aiResult?.suggestions?.length > 0 && (
+          {result.data?.aiReview?.suggestions?.length > 0 && (
             <ul className="list-disc list-inside text-yellow-700 space-y-1 ml-8">
-              {result.data.aiResult.suggestions.map((s, i) => (
+              {result.data.aiReview.suggestions.map((s, i) => (
                 <li key={i}>{s}</li>
               ))}
             </ul>
           )}
           <div className="mt-2 ml-8 text-xs text-yellow-600 space-x-4">
-            {result.data?.aiResult?.confidence != null && (
-              <span>Confidence: {Math.round(result.data.aiResult.confidence * 100)}%</span>
-            )}
-            {result.data?.aiResult?.source && (
-              <span>Source: {result.data.aiResult.source}</span>
+            {result.data?.aiReview?.aiResult?.confidence != null && (
+              <span>Confidence: {Math.round(result.data.aiReview.aiResult.confidence * 100)}%</span>
             )}
           </div>
           {result.data?.draftId && (
@@ -705,62 +655,62 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
         </div>
       )}
 
-      {/* Vendor Section */}
+      {/* Customer Section */}
       <div className="bg-white rounded-xl shadow-sm p-6">
-        {/* Vendor dropdown */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Vendor <span className="text-red-500">*</span>
+            Customer <span className="text-red-500">*</span>
           </label>
-          {!vendorsLoading && vendors.length === 0 ? (
+          {!customersLoading && customers.length === 0 ? (
             <p className="text-sm text-yellow-600 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
-              No vendors configured. Go to Vendor Management to sync.
+              No customers found in QuickBooks. Make sure you have customers set up.
             </p>
           ) : (
-          <div className="relative" ref={vendorDropdownRef}>
+          <div className="relative" ref={customerDropdownRef}>
             <button
               type="button"
-              onClick={() => setVendorOpen((o) => !o)}
+              onClick={() => setCustomerOpen((o) => !o)}
               className="w-full flex items-center justify-between border border-gray-300 rounded-lg px-3 py-2.5 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
             >
-              <span className={form.vendorName ? 'text-atd-dark font-medium' : 'text-gray-400'}>
-                {form.vendorName || (vendorsLoading ? 'Loading vendors...' : 'Select a vendor')}
+              <span className={form.customerName ? 'text-atd-dark font-medium' : 'text-gray-400'}>
+                {form.customerName || (customersLoading ? 'Loading customers...' : 'Select a customer')}
               </span>
               <ChevronDown className="h-4 w-4 text-gray-400" />
             </button>
-            {vendorOpen && (
+            {customerOpen && (
               <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-hidden">
                 <div className="p-2 border-b border-gray-100">
                   <input
                     type="text"
-                    placeholder="Search vendors..."
-                    value={vendorSearch}
-                    onChange={(e) => setVendorSearch(e.target.value)}
+                    placeholder="Search customers..."
+                    value={customerSearch}
+                    onChange={(e) => setCustomerSearch(e.target.value)}
                     className="w-full text-sm border border-gray-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-atd-blue"
                     autoFocus
                   />
                 </div>
                 <div className="overflow-y-auto max-h-48">
-                  {filteredVendors.length === 0 ? (
-                    <div className="px-3 py-2 text-sm text-gray-400">No vendors found.</div>
+                  {filteredCustomers.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-gray-400">No customers found.</div>
                   ) : (
-                    filteredVendors.map((v) => (
+                    filteredCustomers.map((c) => (
                       <button
-                        key={v.Id}
+                        key={c.Id}
                         type="button"
                         className="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-atd-blue hover:text-white transition-colors"
                         onClick={() => {
-                          setField('vendorId', v.Id);
-                          setField('vendorName', v.DisplayName);
-                          // Look up email from QBO vendor data
-                          const qboVendor = qboVendors.find((qv) => String(qv.Id) === String(v.Id));
-                          const email = qboVendor?.PrimaryEmailAddr?.Address || '';
-                          setField('vendorEmail', email);
-                          setVendorOpen(false);
-                          setVendorSearch('');
+                          setField('customerId', c.Id);
+                          setField('customerName', c.DisplayName);
+                          const email = c.PrimaryEmailAddr?.Address || '';
+                          setField('customerEmail', email);
+                          setCustomerOpen(false);
+                          setCustomerSearch('');
                         }}
                       >
-                        <div className="font-medium">{v.DisplayName}</div>
+                        <div className="font-medium">{c.DisplayName}</div>
+                        {c.CompanyName && c.CompanyName !== c.DisplayName && (
+                          <div className="text-xs opacity-70">{c.CompanyName}</div>
+                        )}
                       </button>
                     ))
                   )}
@@ -771,57 +721,53 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
           )}
         </div>
 
-        {/* Ship To address box - shown only when vendor is selected */}
-        {form.vendorId && (
+        {/* Customer info box - shown only when customer is selected */}
+        {form.customerId && form.customerEmail && (
           <div className="mt-4 p-3 bg-gray-100 rounded-lg border border-gray-200">
             <div className="flex items-start gap-2 text-sm text-gray-600">
-              <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0 text-gray-400" />
               <div>
-                <div className="font-medium text-gray-700">Ship To:</div>
-                <div>American Tile Depot</div>
-                <div>1440 S State College Blvd Ste 6G</div>
-                <div>Anaheim, CA 92806</div>
+                <div className="font-medium text-gray-700">Customer Email:</div>
+                <div>{form.customerEmail}</div>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* PO Details */}
+      {/* Invoice Details */}
       <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-base font-semibold text-atd-dark mb-4">PO Details</h2>
+        <h2 className="text-base font-semibold text-atd-dark mb-4">Invoice Details</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* PO Number - First and required */}
+          {/* Invoice Number */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              PO Number <span className="text-red-500">*</span>
+              Invoice Number
             </label>
             <input
               type="text"
-              value={form.poNumber}
-              onChange={(e) => setField('poNumber', e.target.value)}
-              placeholder="Shopify Order #"
-              required
+              value={form.invoiceNumber}
+              onChange={(e) => setField('invoiceNumber', e.target.value)}
+              placeholder="Auto-generated if blank"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
             />
           </div>
 
-          {/* PO Date */}
+          {/* Invoice Date */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">PO Date</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Date</label>
             <input
               type="date"
               value={form.txnDate}
-              onChange={(e) => handleTxnDateChange(e.target.value)}
+              onChange={(e) => setForm((f) => ({ ...f, txnDate: e.target.value }))}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
             />
           </div>
         </div>
 
-        {/* Memo and Message */}
+        {/* Memo and Customer Message */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Memo</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Memo (Internal)</label>
             <input
               type="text"
               value={form.memo}
@@ -831,12 +777,12 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Message to Vendor</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Message to Customer</label>
             <input
               type="text"
-              value={form.vendorMessage}
-              onChange={(e) => setField('vendorMessage', e.target.value)}
-              placeholder="Printed on PO PDF sent to vendor"
+              value={form.customerMessage}
+              onChange={(e) => setField('customerMessage', e.target.value)}
+              placeholder="Printed on invoice sent to customer"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
             />
           </div>
@@ -976,13 +922,13 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
       <div className="bg-white rounded-xl shadow-sm p-6">
         <div className="flex flex-wrap items-center gap-8 mb-6">
           <Toggle
-            id="aiEnabled"
+            id="invoiceAiEnabled"
             checked={form.aiEnabled}
             onChange={(v) => setField('aiEnabled', v)}
             label="AI Review"
           />
           <Toggle
-            id="autoApprove"
+            id="invoiceAutoApprove"
             checked={form.autoApprove}
             onChange={(v) => setField('autoApprove', v)}
             label="Auto Approve (push directly to QBO)"
@@ -1001,14 +947,14 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
             </button>
           ) : (
             <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={() => setShowAutoApproveConfirm(true)}
-                  className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {submitting && <LoadingSpinner size="sm" color="white" />}
-                  Auto Approve and Submit
-                </button>
+              type="button"
+              disabled={submitting}
+              onClick={() => setShowAutoApproveConfirm(true)}
+              className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {submitting && <LoadingSpinner size="sm" color="white" />}
+              Auto Approve and Submit
+            </button>
           )}
         </div>
       </div>
@@ -1027,7 +973,7 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
           <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Confirm Auto-Approve</h3>
             <p className="text-gray-600 mb-4">
-              Are you sure you want to submit this PO directly to QuickBooks? This action cannot be undone.
+              Are you sure you want to submit this invoice directly to QuickBooks? This action cannot be undone.
             </p>
             <div className="flex justify-end gap-3">
               <button
@@ -1066,7 +1012,6 @@ function DraftsTab() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  // Derived pagination values
   const totalItems = drafts.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const paginatedDrafts = useMemo(
@@ -1089,7 +1034,7 @@ function DraftsTab() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.getPoDrafts();
+      const res = await api.getInvoiceDrafts();
       setDrafts(Array.isArray(res.drafts ?? res.data?.drafts) ? (res.drafts ?? res.data?.drafts) : []);
     } catch (err) {
       setError(err.message || 'Failed to load drafts.');
@@ -1104,7 +1049,7 @@ function DraftsTab() {
     setApprovingId(draftId);
     setActionResult(null);
     try {
-      const res = await api.approveDraft(draftId);
+      const res = await api.approveInvoiceDraft(draftId);
       setActionResult({ type: 'success', message: `Draft approved. QBO ID: ${res.qboEntityId || res.data?.Id || 'N/A'}` });
       await fetchDrafts();
     } catch (err) {
@@ -1119,7 +1064,7 @@ function DraftsTab() {
     setRejectingId(draftId);
     setActionResult(null);
     try {
-      await api.rejectDraft(draftId);
+      await api.rejectInvoiceDraft(draftId);
       setActionResult({ type: 'success', message: 'Draft rejected and removed.' });
       await fetchDrafts();
     } catch (err) {
@@ -1143,7 +1088,7 @@ function DraftsTab() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-base font-semibold text-atd-dark">Pending Drafts</h2>
+        <h2 className="text-base font-semibold text-atd-dark">Pending Invoice Drafts</h2>
         <button
           onClick={fetchDrafts}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-atd-blue transition-colors"
@@ -1189,7 +1134,7 @@ function DraftsTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  <th className="px-6 py-3">Vendor</th>
+                  <th className="px-6 py-3">Customer</th>
                   <th className="px-6 py-3">Date</th>
                   <th className="px-6 py-3">Lines</th>
                   <th className="px-6 py-3">Est. Total</th>
@@ -1206,7 +1151,7 @@ function DraftsTab() {
                     <>
                       <tr key={draftKey} className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-3 font-medium text-atd-dark">
-                          {draft.vendorName || draft.vendor?.DisplayName || '-'}
+                          {draft.customerName || '-'}
                         </td>
                         <td className="px-6 py-3 text-gray-500">{draft.txnDate || '-'}</td>
                         <td className="px-6 py-3">
@@ -1315,7 +1260,6 @@ function HistoryTab() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  // Derived pagination values
   const totalItems = history.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const paginatedHistory = useMemo(
@@ -1336,7 +1280,7 @@ function HistoryTab() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.getPoHistory();
+      const res = await api.getInvoiceHistory();
       setHistory(Array.isArray(res.history ?? res.data?.history) ? (res.history ?? res.data?.history) : []);
     } catch (err) {
       setError(err.message || 'Failed to load history.');
@@ -1350,7 +1294,7 @@ function HistoryTab() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-base font-semibold text-atd-dark">PO History</h2>
+        <h2 className="text-base font-semibold text-atd-dark">Invoice History</h2>
         <button
           onClick={fetchHistory}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-atd-blue transition-colors"
@@ -1380,8 +1324,8 @@ function HistoryTab() {
               <thead>
                 <tr className="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   <th className="px-6 py-3">Date</th>
-                  <th className="px-6 py-3">PO #</th>
-                  <th className="px-6 py-3">Vendor</th>
+                  <th className="px-6 py-3">Invoice #</th>
+                  <th className="px-6 py-3">Customer</th>
                   <th className="px-6 py-3">QBO ID</th>
                   <th className="px-6 py-3">Total</th>
                   <th className="px-6 py-3">Status</th>
@@ -1399,10 +1343,10 @@ function HistoryTab() {
                         {formatDateTime(item.timestamp || item.createdAt)}
                       </td>
                       <td className="px-6 py-3 font-mono text-xs text-gray-600">
-                        {item.poNumber || '-'}
+                        {item.invoiceNumber || '-'}
                       </td>
                       <td className="px-6 py-3 font-medium text-atd-dark">
-                        {item.vendorName || '-'}
+                        {item.customerName || '-'}
                       </td>
                       <td className="px-6 py-3 text-gray-600 font-mono text-xs">
                         {item.qboEntityId || '-'}
@@ -1446,155 +1390,20 @@ function HistoryTab() {
 }
 
 // ---------------------------------------------------------------------------
-// Tab 4: Import from Sheets
-// ---------------------------------------------------------------------------
-function ImportFromSheetsTab() {
-  const [preview, setPreview] = useState({ data: null, loading: false, error: null });
-  const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState(null);
-
-  async function handleLoadFromSheets() {
-    setPreview({ data: null, loading: true, error: null });
-    setImportResult(null);
-    try {
-      const res = await api.previewSheetData();
-      const rows = Array.isArray(res.rows) ? res.rows : [];
-      setPreview({ data: rows, loading: false, error: null });
-    } catch (err) {
-      setPreview({ data: null, loading: false, error: err.message || 'Failed to load from Google Sheets.' });
-    }
-  }
-
-  async function handleImportAll() {
-    setImporting(true);
-    setImportResult(null);
-    try {
-      const res = await api.importFromSheets();
-      const count = res.imported ?? res.data?.imported ?? 0;
-      setImportResult({ type: 'success', message: `Imported ${count} PO${count !== 1 ? 's' : ''} as drafts.` });
-    } catch (err) {
-      setImportResult({ type: 'error', message: err.message || 'Import failed.' });
-    } finally {
-      setImporting(false);
-    }
-  }
-
-  const columns = preview.data?.length > 0 ? Object.keys(preview.data[0]) : [];
-
-  return (
-    <div>
-      <div className="mb-4">
-        <h2 className="text-base font-semibold text-atd-dark">Import from Google Sheets</h2>
-        <p className="text-sm text-gray-500 mt-1">Load purchase order data from your configured Google Sheet.</p>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm p-6 space-y-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={handleLoadFromSheets}
-            disabled={preview.loading}
-            className="flex items-center gap-2 bg-atd-blue hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-          >
-            {preview.loading ? <LoadingSpinner size="sm" color="white" /> : <RefreshCw className="h-4 w-4" />}
-            Load from Google Sheets
-          </button>
-          {preview.data && !importResult && (
-            <button
-              onClick={handleImportAll}
-              disabled={importing}
-              className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-            >
-              {importing ? <LoadingSpinner size="sm" color="white" /> : <Plus className="h-4 w-4" />}
-              Import All as Drafts
-            </button>
-          )}
-        </div>
-
-        {preview.error && (
-          <div className="flex items-start gap-3 bg-red-50 border border-red-300 rounded-lg px-4 py-3 text-red-800 text-sm">
-            <X className="h-5 w-5 flex-shrink-0 mt-0.5 text-red-500" />
-            {preview.error}
-          </div>
-        )}
-
-        {importResult && (
-          <div className={`flex items-start gap-3 rounded-lg px-4 py-3 text-sm ${
-            importResult.type === 'success'
-              ? 'bg-green-50 border border-green-300 text-green-800'
-              : 'bg-red-50 border border-red-300 text-red-800'
-          }`}>
-            {importResult.type === 'success' ? (
-              <CheckCircle className="h-5 w-5 flex-shrink-0 mt-0.5 text-green-500" />
-            ) : (
-              <X className="h-5 w-5 flex-shrink-0 mt-0.5 text-red-500" />
-            )}
-            {importResult.message}
-          </div>
-        )}
-
-        {preview.data && preview.data.length > 0 && (
-          <div>
-            <p className="text-sm font-medium text-gray-700 mb-2">
-              Preview: {preview.data.length} row{preview.data.length !== 1 ? 's' : ''} found
-            </p>
-            <div className="overflow-x-auto max-h-96 border border-gray-200 rounded-lg">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 sticky top-0">
-                  <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                    {columns.map((col) => (
-                      <th key={col} className="px-4 py-2 whitespace-nowrap">{col}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {preview.data.map((row, i) => (
-                    <tr key={i} className="hover:bg-gray-50">
-                      {columns.map((col) => (
-                        <td key={col} className="px-4 py-2 text-gray-700 whitespace-nowrap">
-                          {row[col] ?? '-'}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {preview.data && preview.data.length === 0 && (
-          <p className="text-sm text-gray-400">No data rows found in sheet.</p>
-        )}
-
-        {!preview.data && !preview.loading && !preview.error && (
-          <div className="text-center py-10 text-gray-400 text-sm border-2 border-dashed border-gray-200 rounded-lg">
-            Click "Load from Google Sheets" to preview data from your configured sheet.
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Main Page
 // ---------------------------------------------------------------------------
-const TABS = ['Create New', 'Pending Drafts', 'History', 'Import from Sheets'];
+const TABS = ['Create New', 'Pending Drafts', 'History'];
 
-export default function PurchaseOrders({ initialTab }) {
-  // If initialTab is provided, set that tab. Otherwise use state.
+export default function Invoices({ initialTab }) {
   const [activeTab, setActiveTab] = useState(() => {
     if (initialTab === 'drafts') return 1;
     if (initialTab === 'history') return 2;
-    if (initialTab === 'import') return 3;
     return 0;
   });
-  const [vendors, setVendors] = useState([]);
-  const [qboVendors, setQboVendors] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [items, setItems] = useState([]);
-  const [vendorsLoading, setVendorsLoading] = useState(true);
+  const [customersLoading, setCustomersLoading] = useState(true);
 
-  // Fetch items from API (used to refresh after creating a new item)
   async function fetchItems() {
     try {
       const res = await api.getItems();
@@ -1607,29 +1416,22 @@ export default function PurchaseOrders({ initialTab }) {
 
   useEffect(() => {
     async function loadLists() {
-      setVendorsLoading(true);
+      setCustomersLoading(true);
       try {
-        const [mappingsRes, vendorsRes, iRes] = await Promise.all([
-          api.getVendorMappings(),
-          api.getVendors(),
+        const [customersRes, iRes] = await Promise.all([
+          api.getCustomers(),
           api.getItems(),
         ]);
-        // Active vendors for dropdown (from mappings)
-        const allVendors = mappingsRes.mappings?.vendors || [];
-        const activeVendors = allVendors
-          .filter((v) => v.active)
-          .map((v) => ({ Id: v.qbo_id, DisplayName: v.qbo_name }));
-        setVendors(activeVendors);
-        // Full QBO vendor data for email lookup
-        const qboVendorList = vendorsRes.vendors || vendorsRes.data?.vendors || [];
-        setQboVendors(Array.isArray(qboVendorList) ? qboVendorList : []);
+        // Customers for dropdown
+        const customerList = customersRes.customers || customersRes.data?.customers || [];
+        setCustomers(Array.isArray(customerList) ? customerList : []);
         // Items
         const itemList = iRes.items || iRes.data || iRes;
         setItems(Array.isArray(itemList) ? itemList : []);
       } catch (err) {
-        console.error('[PurchaseOrders] Failed to load lists:', err);
+        console.error('[Invoices] Failed to load lists:', err);
       } finally {
-        setVendorsLoading(false);
+        setCustomersLoading(false);
       }
     }
     loadLists();
@@ -1638,8 +1440,8 @@ export default function PurchaseOrders({ initialTab }) {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-atd-dark">Purchase Orders</h1>
-        <p className="text-gray-500 text-sm mt-1">Create, review, and manage purchase orders</p>
+        <h1 className="text-2xl font-bold text-atd-dark">Invoices</h1>
+        <p className="text-gray-500 text-sm mt-1">Create, review, and manage invoices for customers</p>
       </div>
 
       {/* Tab bar */}
@@ -1662,11 +1464,10 @@ export default function PurchaseOrders({ initialTab }) {
       </div>
 
       {activeTab === 0 && (
-        <CreateTab vendors={vendors} qboVendors={qboVendors} items={items} vendorsLoading={vendorsLoading} onSwitchToHistory={() => setActiveTab(2)} onRefreshItems={fetchItems} />
+        <CreateTab customers={customers} items={items} customersLoading={customersLoading} onSwitchToHistory={() => setActiveTab(2)} onRefreshItems={fetchItems} />
       )}
       {activeTab === 1 && <DraftsTab />}
       {activeTab === 2 && <HistoryTab />}
-      {activeTab === 3 && <ImportFromSheetsTab />}
     </div>
   );
 }

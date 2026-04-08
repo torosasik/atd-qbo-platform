@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ShoppingCart,
   FileText,
@@ -13,12 +14,18 @@ import {
   X,
   RefreshCw,
   XCircle,
+  AlertTriangle,
   Users,
   FileSpreadsheet,
   Brain,
+  Receipt,
+  CreditCard,
+  Wallet,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 // Load PurchaseOrders for inline sections
 import PurchaseOrders from './PurchaseOrders';
@@ -86,15 +93,20 @@ function DashboardBox({ icon: Icon, title, description, count, onClick, loading,
 // Main Dashboard Component
 // --------------------------------------------------------------------------
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState(null);
   const [loading, setLoading] = useState(true);
   const [systemOk, setSystemOk] = useState(null);
+  const [error, setError] = useState(null);
+  const [healthWarning, setHealthWarning] = useState(null);
+  const [healthDismissed, setHealthDismissed] = useState(false);
 
   // Data for overview stats
   const [stats, setStats] = useState({ drafts: 0, todayPOs: 0, todayAIReviews: 0 });
 
   const fetchStats = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const [draftsRes, historyRes, healthRes] = await Promise.all([
         api.getPoDrafts().catch(() => ({ drafts: [] })),
@@ -112,8 +124,20 @@ export default function Dashboard() {
         todayAIReviews: todayAiReviews.length,
       });
       setSystemOk(healthRes ? (healthRes.status === 'ok' || healthRes.status === 'healthy') : null);
+
+      // Health warning banner for unhealthy/degraded status
+      if (healthRes && (healthRes.status === 'unhealthy' || healthRes.status === 'degraded')) {
+        setHealthWarning({
+          status: healthRes.status,
+          errors: healthRes.errors || [],
+        });
+        setHealthDismissed(false);
+      } else {
+        setHealthWarning(null);
+      }
     } catch (err) {
       setSystemOk(false);
+      setError(err.message || 'Failed to load dashboard data.');
     } finally {
       setLoading(false);
     }
@@ -181,6 +205,38 @@ export default function Dashboard() {
       description: 'Use AI to review and validate your purchase orders before submitting. Get suggestions and flag potential issues.',
       accentColor: 'bg-pink-500',
     },
+    {
+      id: 'invoices',
+      icon: FileText,
+      title: 'Invoice Create',
+      description: 'Create invoices with AI review.',
+      accentColor: 'bg-emerald-600',
+      route: '/invoices',
+    },
+    {
+      id: 'bills',
+      icon: Receipt,
+      title: 'Bill Create',
+      description: 'Manage vendor bills.',
+      accentColor: 'bg-amber-600',
+      route: '/bills',
+    },
+    {
+      id: 'payments',
+      icon: CreditCard,
+      title: 'Payment Apply',
+      description: 'Apply payments to invoices.',
+      accentColor: 'bg-cyan-600',
+      route: '/payments',
+    },
+    {
+      id: 'expenses',
+      icon: Wallet,
+      title: 'Expense Categorize',
+      description: 'AI-powered expense categorization.',
+      accentColor: 'bg-rose-600',
+      route: '/expenses',
+    },
   ];
 
   // Render the selected section
@@ -189,7 +245,7 @@ export default function Dashboard() {
     
     switch (activeSection) {
       case 'overview':
-        return <OverviewSection stats={stats} systemOk={systemOk} loading={loading} onRefresh={fetchStats} onClose={() => setActiveSection(null)} />;
+        return <OverviewSection stats={stats} systemOk={systemOk} loading={loading} onRefresh={fetchStats} onClose={() => setActiveSection(null)} onNavigate={setActiveSection} />;
       case 'create-po':
         return <CreatePOSection onClose={() => setActiveSection(null)} />;
       case 'drafts':
@@ -235,6 +291,51 @@ export default function Dashboard() {
           renderSection()
         ) : (
           <div className="max-w-6xl mx-auto">
+            {/* Health warning banner */}
+            {healthWarning && !healthDismissed && (
+              <div className={`mb-6 rounded-lg px-4 py-3 text-sm flex items-start justify-between ${
+                healthWarning.status === 'unhealthy'
+                  ? 'bg-red-50 border border-red-300 text-red-700'
+                  : 'bg-yellow-50 border border-yellow-300 text-yellow-700'
+              }`}>
+                <div className="flex items-start gap-2 flex-1">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="font-medium">
+                      System {healthWarning.status === 'unhealthy' ? 'Unhealthy' : 'Degraded'}
+                    </p>
+                    {healthWarning.errors.length > 0 && (
+                      <ul className="mt-1 list-disc list-inside">
+                        {healthWarning.errors.map((e, i) => (
+                          <li key={i}>{e}</li>
+                        ))}
+                      </ul>
+                    )}
+                    <button
+                      onClick={() => navigate('/health')}
+                      className="mt-1 underline text-sm font-medium hover:opacity-80"
+                    >
+                      View Details
+                    </button>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setHealthDismissed(true)}
+                  className="ml-3 flex-shrink-0 hover:opacity-70"
+                  aria-label="Dismiss"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Error banner */}
+            {error && (
+              <div className="mb-6 bg-red-50 border border-red-300 text-red-700 rounded-lg px-4 py-3 text-sm">
+                {error}
+              </div>
+            )}
+
             <p className="text-gray-500 text-sm mb-6">Select a feature below to get started.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {featureBoxes.map((box) => (
@@ -245,7 +346,7 @@ export default function Dashboard() {
                   description={box.description}
                   loading={loading}
                   accentColor={box.accentColor}
-                  onClick={() => setActiveSection(box.id)}
+                  onClick={() => box.route ? navigate(box.route) : setActiveSection(box.id)}
                 />
               ))}
             </div>
@@ -415,7 +516,7 @@ function HelpButton() {
 // --------------------------------------------------------------------------
 // Overview Section
 // --------------------------------------------------------------------------
-function OverviewSection({ stats, systemOk, loading, onRefresh, onClose }) {
+function OverviewSection({ stats, systemOk, loading, onRefresh, onClose, onNavigate }) {
   const [recentActivity, setRecentActivity] = useState([]);
 
   useEffect(() => {
@@ -431,9 +532,9 @@ function OverviewSection({ stats, systemOk, loading, onRefresh, onClose }) {
       </button>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <DashboardBox icon={FileText} title="Pending Drafts" description="" count={stats.drafts} accentColor="bg-atd-blue" onClick={() => {}} />
-        <DashboardBox icon={ShoppingCart} title="POs Today" description="" count={stats.todayPOs} accentColor="bg-green-600" onClick={() => {}} />
-        <DashboardBox icon={Brain} title="AI Reviews" description="" count={stats.todayAIReviews} accentColor="bg-purple-500" onClick={() => {}} />
+        <DashboardBox icon={FileText} title="Pending Drafts" description="" count={stats.drafts} accentColor="bg-atd-blue" onClick={() => onNavigate('drafts')} />
+        <DashboardBox icon={ShoppingCart} title="POs Today" description="" count={stats.todayPOs} accentColor="bg-green-600" onClick={() => onNavigate('history')} />
+        <DashboardBox icon={Brain} title="AI Reviews" description="" count={stats.todayAIReviews} accentColor="bg-purple-500" onClick={() => onNavigate('ai-review')} />
         <div className="bg-white rounded-xl shadow-sm p-6 flex items-start justify-between">
           <div>
             <p className="text-sm text-gray-500 font-medium">System Status</p>
@@ -455,7 +556,7 @@ function OverviewSection({ stats, systemOk, loading, onRefresh, onClose }) {
               )}
             </div>
           </div>
-          <div className={`p-2 rounded-lg ${systemOk ? 'bg-green-500' : 'bg-red-500'}`}>
+          <div className={`p-2 rounded-lg ${systemOk === null ? 'bg-gray-400' : systemOk ? 'bg-green-500' : 'bg-red-500'}`}>
             {systemOk ? <CheckCircle className="h-6 w-6 text-white" /> : <XCircle className="h-6 w-6 text-white" />}
           </div>
         </div>
@@ -474,8 +575,9 @@ function OverviewSection({ stats, systemOk, loading, onRefresh, onClose }) {
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase">
-                  <th className="px-6 py-3">Date/Time</th>
+                <tr className="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-3">Date / Time</th>
+                  <th className="px-6 py-3">Module</th>
                   <th className="px-6 py-3">Action</th>
                   <th className="px-6 py-3">Status</th>
                   <th className="px-6 py-3">Details</th>
@@ -483,16 +585,23 @@ function OverviewSection({ stats, systemOk, loading, onRefresh, onClose }) {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {recentActivity.map((item, idx) => (
-                  <tr key={item.id || idx}>
-                    <td className="px-6 py-3 text-gray-500">{formatDateTime(item.timestamp)}</td>
-                    <td className="px-6 py-3 font-medium text-atd-dark">{item.action || 'Create'}</td>
+                  <tr key={item.id || idx} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-3 text-gray-500 whitespace-nowrap">{formatDateTime(item.createdAt || item.timestamp)}</td>
+                    <td className="px-6 py-3 font-medium text-atd-dark">{item.module || 'Purchase Order'}</td>
+                    <td className="px-6 py-3 text-gray-600">{item.action || item.type || 'Create'}</td>
                     <td className="px-6 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                         item.status === 'success' ? 'bg-green-100 text-green-700' :
-                        item.status === 'error' ? 'bg-red-100 text-red-700' : 'bg-gray-100'
-                      }`}>{item.status}</span>
+                        item.status === 'error' ? 'bg-red-100 text-red-700' :
+                        item.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                        item.status === 'draft' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+                      }`}>{item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1) : 'Unknown'}</span>
                     </td>
-                    <td className="px-6 py-3 text-gray-500">{item.vendorName || item.error || '-'}</td>
+                    <td className="px-6 py-3 text-gray-500 max-w-xs truncate">
+                      {item.qboEntityId
+                        ? `QBO ID: ${item.qboEntityId}`
+                        : item.vendorName || item.details || item.error || '-'}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -842,7 +951,7 @@ function QBOConnectSection({ onClose }) {
   }, []);
 
   async function handleConnect() {
-    window.location.href = '/api/auth/connect';
+    window.location.href = `${API_BASE_URL}/auth/connect`;
   }
 
   return (

@@ -20,6 +20,17 @@ export default function VendorManagement() {
   const showToast = (message, type = 'success') => setToast({ message, type });
   const dismissToast = useCallback(() => setToast(null), []);
 
+  // Warn on tab close / refresh when there are unsaved changes
+  useEffect(() => {
+    const handler = (e) => {
+      if (!hasUnsavedChanges) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasUnsavedChanges]);
+
   useEffect(() => {
     loadMappings();
   }, []);
@@ -140,6 +151,14 @@ export default function VendorManagement() {
           Map QuickBooks vendors to Shopify codes
         </p>
       </div>
+
+      {/* Unsaved changes indicator */}
+      {hasUnsavedChanges && (
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-800 rounded-lg px-4 py-2.5 text-sm font-medium">
+          <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse" />
+          You have unsaved changes
+        </div>
+      )}
 
       {loadError && (
         <div className="flex items-center gap-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-lg px-4 py-3 text-sm">

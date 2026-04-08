@@ -1,6 +1,6 @@
 import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import SimpleLayout from './components/shared/SimpleLayout';
+import AppLayout from './components/shared/AppLayout';
 import LoadingSpinner from './components/shared/LoadingSpinner';
 
 // Lazy load page components for better performance
@@ -8,6 +8,14 @@ const NewDashboard = lazy(() => import('./pages/NewDashboard'));
 const HealthCheck = lazy(() => import('./pages/HealthCheck'));
 const Help = lazy(() => import('./pages/Help'));
 const AIChat = lazy(() => import('./pages/AIChat'));
+const PurchaseOrders = lazy(() => import('./pages/PurchaseOrders'));
+const Settings = lazy(() => import('./pages/Settings'));
+const QBOConnect = lazy(() => import('./pages/QBOConnect'));
+const VendorManagement = lazy(() => import('./pages/VendorManagement'));
+const Invoices = lazy(() => import('./pages/Invoices'));
+const Bills = lazy(() => import('./pages/Bills'));
+const Payments = lazy(() => import('./pages/Payments'));
+const Expenses = lazy(() => import('./pages/Expenses'));
 
 // Loading fallback component
 function PageLoader() {
@@ -57,20 +65,29 @@ class ErrorBoundary extends React.Component {
 export default function App() {
   return (
     <BrowserRouter>
-      <SimpleLayout>
-        <ErrorBoundary>
-          <Suspense fallback={<PageLoader />}>
-            <Routes>
+      <ErrorBoundary>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            {/* AppLayout wraps all routes that should show the sidebar */}
+            <Route element={<AppLayout />}>
               <Route path="/" element={<NewDashboard />} />
+              <Route path="/purchase-orders" element={<PurchaseOrders />} />
+              <Route path="/invoices" element={<Invoices />} />
+              <Route path="/bills" element={<Bills />} />
+              <Route path="/payments" element={<Payments />} />
+              <Route path="/expenses" element={<Expenses />} />
+              <Route path="/ai-chat" element={<AIChat />} />
+              <Route path="/qbo-connect" element={<QBOConnect />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/vendor-management" element={<VendorManagement />} />
               <Route path="/health" element={<HealthCheck />} />
               <Route path="/help" element={<Help />} />
-              <Route path="/ai-chat" element={<AIChat />} />
               {/* Catch-all: redirect unknown paths to Dashboard */}
               <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </Suspense>
-        </ErrorBoundary>
-      </SimpleLayout>
+            </Route>
+          </Routes>
+        </Suspense>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }

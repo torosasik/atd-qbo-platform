@@ -1,28 +1,61 @@
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, CheckCircle, X, AlertCircle, ExternalLink } from 'lucide-react';
+import { RefreshCw, CheckCircle, X, AlertCircle, ExternalLink, Clock } from 'lucide-react';
 import { api } from '../utils/api';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import Toast from '../components/shared/Toast';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
+/**
+ * Calculates detailed expiry information with color-coded thresholds:
+ * - Green:  > 24 hours remaining
+ * - Yellow: 1–24 hours remaining
+ * - Red:    < 1 hour remaining (or expired)
+ */
 function getExpiryInfo(expiryStr) {
-  if (!expiryStr) return { text: 'Unknown', color: 'text-gray-500', isExpired: false };
+  if (!expiryStr) return { text: 'Unknown', color: 'text-gray-500', bgColor: 'bg-gray-50 border-gray-200', badgeColor: 'bg-gray-100 text-gray-600', isExpired: false, level: 'unknown' };
+
   const expiry = new Date(expiryStr);
   const now = new Date();
   const diffMs = expiry - now;
-  const diffMins = Math.round(diffMs / 60000);
+  const diffMins = Math.floor(diffMs / 60000);
 
   if (diffMs < 0) {
     const agoMins = Math.abs(diffMins);
-    const text = agoMins < 60 ? `Expired ${agoMins}m ago` : `Expired ${Math.round(agoMins / 60)}h ago`;
-    return { text, color: 'text-red-600', isExpired: true };
+    let text;
+    if (agoMins < 60) {
+      text = `Expired ${agoMins}m ago`;
+    } else if (agoMins < 1440) {
+      text = `Expired ${Math.floor(agoMins / 60)}h ${agoMins % 60}m ago`;
+    } else {
+      const days = Math.floor(agoMins / 1440);
+      const hours = Math.floor((agoMins % 1440) / 60);
+      text = `Expired ${days}d ${hours}h ago`;
+    }
+    return { text, color: 'text-red-600', bgColor: 'bg-red-50 border-red-200', badgeColor: 'bg-red-100 text-red-700', isExpired: true, level: 'expired' };
   }
-  if (diffMins < 60) {
-    return { text: `Expires in ${diffMins}m`, color: 'text-amber-600', isExpired: false };
+
+  const days = Math.floor(diffMins / 1440);
+  const hours = Math.floor((diffMins % 1440) / 60);
+  const mins = diffMins % 60;
+
+  let text;
+  if (days > 0) {
+    text = `${days} day${days !== 1 ? 's' : ''} ${hours} hour${hours !== 1 ? 's' : ''}`;
+  } else if (hours > 0) {
+    text = `${hours} hour${hours !== 1 ? 's' : ''} ${mins} min${mins !== 1 ? 's' : ''}`;
+  } else {
+    text = `${mins} minute${mins !== 1 ? 's' : ''}`;
   }
-  const hours = Math.round(diffMins / 60);
-  return { text: `Expires in ${hours}h`, color: 'text-green-600', isExpired: false };
+
+  // Green: > 24h, Yellow: 1-24h, Red: < 1h
+  if (diffMins > 1440) {
+    return { text, color: 'text-green-600', bgColor: 'bg-green-50 border-green-200', badgeColor: 'bg-green-100 text-green-700', isExpired: false, level: 'healthy' };
+  }
+  if (diffMins > 60) {
+    return { text, color: 'text-amber-600', bgColor: 'bg-amber-50 border-amber-200', badgeColor: 'bg-amber-100 text-amber-700', isExpired: false, level: 'warning' };
+  }
+  return { text, color: 'text-red-600', bgColor: 'bg-red-50 border-red-200', badgeColor: 'bg-red-100 text-red-700', isExpired: false, level: 'critical' };
 }
 
 function formatDateTime(ts) {
@@ -42,6 +75,8 @@ export default function QBOConnect() {
   const [error, setError] = useState(null);
   const [actionLoading, setActionLoading] = useState(null); // 'disconnect' | 'refresh'
   const [toast, setToast] = useState(null);
+  // Tick counter to force countdown re-render every 60s
+  const [countdownTick, setCountdownTick] = useState(0);
 
   const dismissToast = useCallback(() => setToast(null), []);
 
@@ -80,6 +115,17 @@ export default function QBOConnect() {
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, []);
+
+  // Separate countdown ticker — updates the displayed countdown every 60s
+  useEffect(() => {
+    const tickId = setInterval(() => setCountdownTick((t) => t + 1), 60_000);
+    return () => clearInterval(tickId);
+  }, []);
+
+  // Compute expiry info (recalculated every tick or when status changes)
+  // eslint-disable-next-line no-unused-vars
+  const _tick = countdownTick; // read so React tracks the dependency
+  const expiryInfo = status?.tokenExpiry ? getExpiryInfo(status.tokenExpiry) : null;
 
   async function handleDisconnect() {
     setActionLoading('disconnect');
@@ -176,15 +222,12 @@ export default function QBOConnect() {
               </div>
               <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-6">
                 <span className="text-sm font-medium text-gray-700 sm:w-36 flex-shrink-0">Token Expires</span>
-                {status?.tokenExpiry ? (() => {
-                  const expiry = getExpiryInfo(status.tokenExpiry);
-                  return (
-                    <span className={`text-sm font-medium ${expiry.color}`}>
-                      {expiry.isExpired && <AlertCircle className="inline h-4 w-4 mr-1 align-text-bottom" />}
-                      {formatDateTime(status.tokenExpiry)} — {expiry.text}
-                    </span>
-                  );
-                })() : (
+                {expiryInfo ? (
+                  <span className={`text-sm font-medium ${expiryInfo.color}`}>
+                    {expiryInfo.isExpired && <AlertCircle className="inline h-4 w-4 mr-1 align-text-bottom" />}
+                    {formatDateTime(status.tokenExpiry)} — {expiryInfo.text}
+                  </span>
+                ) : (
                   <span className="text-sm text-gray-600">(unavailable)</span>
                 )}
               </div>
@@ -198,6 +241,42 @@ export default function QBOConnect() {
           </div>
         )}
       </div>
+
+      {/* Token Expiry Countdown Banner */}
+      {connected && !loading && expiryInfo && (
+        <div className={`rounded-xl border p-4 ${expiryInfo.bgColor} shadow-sm`}>
+          <div className="flex items-center gap-3">
+            <div className={`flex items-center justify-center w-10 h-10 rounded-full ${expiryInfo.badgeColor}`}>
+              <Clock className="h-5 w-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className={`text-sm font-semibold ${expiryInfo.color}`}>
+                {expiryInfo.isExpired ? 'Token Expired' : 'Expires in:'}
+              </p>
+              <p className={`text-lg font-bold ${expiryInfo.color} tracking-tight`}>
+                {expiryInfo.text}
+              </p>
+            </div>
+            {(expiryInfo.level === 'critical' || expiryInfo.level === 'expired') && (
+              <button
+                onClick={handleRefreshToken}
+                disabled={actionLoading === 'refresh'}
+                className="flex items-center gap-1.5 bg-white/80 hover:bg-white text-red-700 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-60"
+              >
+                {actionLoading === 'refresh' ? (
+                  <LoadingSpinner size="sm" color="gray" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                Refresh Now
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-gray-500 mt-2 ml-13">
+            Updates every 60 seconds · Token auto-refreshes before expiry
+          </p>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm p-6 space-y-4">
         <h2 className="text-base font-semibold text-atd-dark">Actions</h2>

@@ -3,8 +3,12 @@
 const express = require('express');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { handleCreate, handleApproveDraft } = require('../modules/purchase-order/index');
+const { handleCreate: handleInvoiceCreate, handleApproveDraft: handleInvoiceApproveDraft } = require('../modules/invoice/index');
+const { handleCreate: handleBillCreate, handleApproveDraft: handleBillApproveDraft } = require('../modules/bill/index');
+const { handleCreate: handlePaymentCreate, handleApproveDraft: handlePaymentApproveDraft } = require('../modules/payment/index');
+const { handleFetchExpenses, handleCategorize, handleApproveDraft: handleExpenseApproveDraft, handleRejectDraft: handleExpenseRejectDraft } = require('../modules/expense/index');
 const { handleChatMessage } = require('../modules/ai-chat/index');
-const { getCachedVendors, getCachedItems, refreshItems, refreshVendors } = require('../core/cache');
+const { getCachedVendors, getCachedItems, getCachedCustomers, getCachedAccounts, fetchOpenInvoices, fetchUncategorizedExpenses, refreshItems, refreshVendors, refreshCustomers } = require('../core/cache');
 const { getRealmId, refreshAccessToken, getQboBaseUrl, getValidAccessToken, ensureValidToken } = require('../core/qbo-auth');
 const { getSettings, updateSettings } = require('../core/settings');
 const { logAction } = require('../core/logger');
@@ -104,6 +108,472 @@ router.get('/po/history', async (req, res) => {
     });
 
     res.status(200).json({ success: true, history });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /po/drafts/:draftId
+// Deletes (rejects) a pending PO draft.
+// ---------------------------------------------------------------------------
+
+router.delete('/po/drafts/:draftId', async (req, res) => {
+  try {
+    const { draftId } = req.params;
+    const db = getFirestore();
+    const draftRef = db.collection('po_drafts').doc(draftId);
+    const draftSnap = await draftRef.get();
+
+    if (!draftSnap.exists) {
+      return res.status(404).json({ success: false, error: `Draft '${draftId}' not found` });
+    }
+
+    const draft = draftSnap.data();
+    if (draft.status !== 'pending') {
+      return res.status(409).json({ success: false, error: 'Draft has already been processed and cannot be deleted' });
+    }
+
+    await draftRef.update({
+      status: 'rejected',
+      rejectedAt: FieldValue.serverTimestamp(),
+    });
+
+    await logAction('purchase-order', 'reject-draft', 'success', { draftId });
+
+    return res.status(200).json({ success: true, message: 'Draft rejected and deleted.' });
+  } catch (err) {
+    await logAction('purchase-order', 'reject-draft', 'error', { errorMessage: err.message });
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /invoices
+// Body: { customerName, lines, txnDate?, memo?, autoApprove?, aiEnabled? }
+// ---------------------------------------------------------------------------
+
+router.post('/invoices', async (req, res) => {
+  try {
+    await ensureValidToken();
+    await handleInvoiceCreate(req, res);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /invoices/drafts/:draftId/approve
+// ---------------------------------------------------------------------------
+
+router.post('/invoices/drafts/:draftId/approve', async (req, res) => {
+  try {
+    await ensureValidToken();
+    await handleInvoiceApproveDraft(req, res);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /invoices/drafts
+// Returns pending invoice drafts ordered by createdAt desc, limit 50.
+// ---------------------------------------------------------------------------
+
+router.get('/invoices/drafts', async (req, res) => {
+  try {
+    const db = getFirestore();
+    const snapshot = await db
+      .collection('invoice_drafts')
+      .where('status', '==', 'pending')
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .get();
+
+    const drafts = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    res.status(200).json({ success: true, drafts });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /invoices
+// Returns push-to-qbo log entries for the invoice module, limit 100.
+// ---------------------------------------------------------------------------
+
+router.get('/invoices', async (req, res) => {
+  try {
+    const db = getFirestore();
+    const snapshot = await db
+      .collection('logs')
+      .where('module', '==', 'invoice')
+      .where('action', '==', 'push-to-qbo')
+      .orderBy('timestamp', 'desc')
+      .limit(100)
+      .get();
+
+    const history = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      const details = data.details || {};
+      // Convert Firestore Timestamp to ISO string for JSON-safe serialization
+      const timestampIso = data.timestamp
+        ? (data.timestamp.toDate ? data.timestamp.toDate().toISOString() : new Date(data.timestamp._seconds * 1000).toISOString())
+        : null;
+      return {
+        id: doc.id,
+        status: data.status,
+        timestamp: timestampIso,
+        // Flatten details for convenient frontend access
+        customerName: details.customerName || null,
+        qboEntityId: details.entityId || null,
+        intuitTid: details.intuitTid || null,
+        invoiceNumber: details.invoiceNumber || null,
+        total: details.total || null,
+        errorMessage: details.errorMessage || null,
+      };
+    });
+
+    res.status(200).json({ success: true, history });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /invoices/drafts/:draftId/reject
+// Rejects a pending invoice draft.
+// ---------------------------------------------------------------------------
+
+router.post('/invoices/drafts/:draftId/reject', async (req, res) => {
+  try {
+    const { draftId } = req.params;
+    const db = getFirestore();
+    const draftRef = db.collection('invoice_drafts').doc(draftId);
+    const draftSnap = await draftRef.get();
+
+    if (!draftSnap.exists) {
+      return res.status(404).json({ success: false, error: `Draft '${draftId}' not found` });
+    }
+
+    const draft = draftSnap.data();
+    if (draft.status !== 'pending') {
+      return res.status(409).json({ success: false, error: 'Draft has already been processed and cannot be rejected' });
+    }
+
+    await draftRef.update({
+      status: 'rejected',
+      rejectedAt: FieldValue.serverTimestamp(),
+    });
+
+    await logAction('invoice', 'reject-draft', 'success', { draftId });
+
+    return res.status(200).json({ success: true, message: 'Draft rejected.' });
+  } catch (err) {
+    await logAction('invoice', 'reject-draft', 'error', { errorMessage: err.message });
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /bills
+// Body: { vendorName, lines, txnDate?, memo?, autoApprove?, aiEnabled? }
+// ---------------------------------------------------------------------------
+
+router.post('/bills', async (req, res) => {
+  try {
+    await ensureValidToken();
+    await handleBillCreate(req, res);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /bills/drafts/:draftId/approve
+// ---------------------------------------------------------------------------
+
+router.post('/bills/drafts/:draftId/approve', async (req, res) => {
+  try {
+    await ensureValidToken();
+    await handleBillApproveDraft(req, res);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /bills/drafts
+// Returns pending bill drafts ordered by createdAt desc, limit 50.
+// ---------------------------------------------------------------------------
+
+router.get('/bills/drafts', async (req, res) => {
+  try {
+    const db = getFirestore();
+    const snapshot = await db
+      .collection('bill_drafts')
+      .where('status', '==', 'pending')
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .get();
+
+    const drafts = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    res.status(200).json({ success: true, drafts });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /bills
+// Returns push-to-qbo log entries for the bill module, limit 100.
+// ---------------------------------------------------------------------------
+
+router.get('/bills', async (req, res) => {
+  try {
+    const db = getFirestore();
+    const snapshot = await db
+      .collection('logs')
+      .where('module', '==', 'bill')
+      .where('action', '==', 'push-to-qbo')
+      .orderBy('timestamp', 'desc')
+      .limit(100)
+      .get();
+
+    const history = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      const details = data.details || {};
+      // Convert Firestore Timestamp to ISO string for JSON-safe serialization
+      const timestampIso = data.timestamp
+        ? (data.timestamp.toDate ? data.timestamp.toDate().toISOString() : new Date(data.timestamp._seconds * 1000).toISOString())
+        : null;
+      return {
+        id: doc.id,
+        status: data.status,
+        timestamp: timestampIso,
+        // Flatten details for convenient frontend access
+        vendorName: details.vendorName || null,
+        qboEntityId: details.entityId || null,
+        intuitTid: details.intuitTid || null,
+        billNumber: details.billNumber || null,
+        total: details.total || null,
+        errorMessage: details.errorMessage || null,
+      };
+    });
+
+    res.status(200).json({ success: true, history });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /bills/drafts/:draftId/reject
+// Rejects a pending bill draft.
+// ---------------------------------------------------------------------------
+
+router.post('/bills/drafts/:draftId/reject', async (req, res) => {
+  try {
+    const { draftId } = req.params;
+    const db = getFirestore();
+    const draftRef = db.collection('bill_drafts').doc(draftId);
+    const draftSnap = await draftRef.get();
+
+    if (!draftSnap.exists) {
+      return res.status(404).json({ success: false, error: `Draft '${draftId}' not found` });
+    }
+
+    const draft = draftSnap.data();
+    if (draft.status !== 'pending') {
+      return res.status(409).json({ success: false, error: 'Draft has already been processed and cannot be rejected' });
+    }
+
+    await draftRef.update({
+      status: 'rejected',
+      rejectedAt: FieldValue.serverTimestamp(),
+    });
+
+    await logAction('bill', 'reject-draft', 'success', { draftId });
+
+    return res.status(200).json({ success: true, message: 'Draft rejected.' });
+  } catch (err) {
+    await logAction('bill', 'reject-draft', 'error', { errorMessage: err.message });
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /payments
+// Body: { customerId, customerName, totalAmount, lines, txnDate?, memo?,
+//         paymentMethod?, referenceNumber?, autoApprove?, aiEnabled? }
+// ---------------------------------------------------------------------------
+
+router.post('/payments', async (req, res) => {
+  try {
+    await ensureValidToken();
+    await handlePaymentCreate(req, res);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /payments/drafts/:draftId/approve
+// ---------------------------------------------------------------------------
+
+router.post('/payments/drafts/:draftId/approve', async (req, res) => {
+  try {
+    await ensureValidToken();
+    await handlePaymentApproveDraft(req, res);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /payments/drafts
+// Returns pending payment drafts ordered by createdAt desc, limit 50.
+// ---------------------------------------------------------------------------
+
+router.get('/payments/drafts', async (req, res) => {
+  try {
+    const db = getFirestore();
+    const snapshot = await db
+      .collection('payment_drafts')
+      .where('status', '==', 'pending')
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .get();
+
+    const drafts = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    res.status(200).json({ success: true, drafts });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /payments
+// Returns push-to-qbo log entries for the payment module, limit 100.
+// ---------------------------------------------------------------------------
+
+router.get('/payments', async (req, res) => {
+  try {
+    const db = getFirestore();
+    const snapshot = await db
+      .collection('logs')
+      .where('module', '==', 'payment')
+      .where('action', '==', 'push-to-qbo')
+      .orderBy('timestamp', 'desc')
+      .limit(100)
+      .get();
+
+    const history = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      const details = data.details || {};
+      // Convert Firestore Timestamp to ISO string for JSON-safe serialization
+      const timestampIso = data.timestamp
+        ? (data.timestamp.toDate ? data.timestamp.toDate().toISOString() : new Date(data.timestamp._seconds * 1000).toISOString())
+        : null;
+      return {
+        id: doc.id,
+        status: data.status,
+        timestamp: timestampIso,
+        // Flatten details for convenient frontend access
+        customerName: details.customerName || null,
+        qboEntityId: details.entityId || null,
+        intuitTid: details.intuitTid || null,
+        total: details.total || null,
+        errorMessage: details.errorMessage || null,
+      };
+    });
+
+    res.status(200).json({ success: true, history });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /payments/drafts/:draftId/reject
+// Rejects a pending payment draft.
+// ---------------------------------------------------------------------------
+
+router.post('/payments/drafts/:draftId/reject', async (req, res) => {
+  try {
+    const { draftId } = req.params;
+    const db = getFirestore();
+    const draftRef = db.collection('payment_drafts').doc(draftId);
+    const draftSnap = await draftRef.get();
+
+    if (!draftSnap.exists) {
+      return res.status(404).json({ success: false, error: `Draft '${draftId}' not found` });
+    }
+
+    const draft = draftSnap.data();
+    if (draft.status !== 'pending') {
+      return res.status(409).json({ success: false, error: 'Draft has already been processed and cannot be rejected' });
+    }
+
+    await draftRef.update({
+      status: 'rejected',
+      rejectedAt: FieldValue.serverTimestamp(),
+    });
+
+    await logAction('payment', 'reject-draft', 'success', { draftId });
+
+    return res.status(200).json({ success: true, message: 'Draft rejected.' });
+  } catch (err) {
+    await logAction('payment', 'reject-draft', 'error', { errorMessage: err.message });
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /open-invoices/:customerId
+// Returns open (unpaid) invoices for a specific customer from QBO.
+// ---------------------------------------------------------------------------
+
+router.get('/open-invoices/:customerId', async (req, res) => {
+  try {
+    await ensureValidToken();
+    const realmId = await getRealmId();
+    const { customerId } = req.params;
+
+    if (!customerId) {
+      return res.status(400).json({ success: false, error: 'customerId is required' });
+    }
+
+    const invoices = await fetchOpenInvoices(realmId, customerId);
+    res.status(200).json({ success: true, invoices });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /customers
+// Returns cached customer list for the current QBO realm.
+// ---------------------------------------------------------------------------
+
+router.get('/customers', async (req, res) => {
+  try {
+    await ensureValidToken();
+    const realmId = await getRealmId();
+    const customers = await getCachedCustomers(realmId);
+    res.status(200).json({ success: true, customers });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -655,6 +1125,163 @@ router.post('/vendor-mappings/sync', async (req, res) => {
     });
   } catch (err) {
     await logAction('vendor-management', 'sync', 'error', { error: err.message });
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ===========================================================================
+// EXPENSE CATEGORIZATION ROUTES
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// GET /expenses/uncategorized
+// Fetches uncategorized expenses from QBO.
+// ---------------------------------------------------------------------------
+
+router.get('/expenses/uncategorized', async (req, res) => {
+  try {
+    await ensureValidToken();
+    await handleFetchExpenses(req, res);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /expenses/drafts
+// Returns pending expense categorization drafts ordered by createdAt desc.
+// ---------------------------------------------------------------------------
+
+router.get('/expenses/drafts', async (req, res) => {
+  try {
+    const db = getFirestore();
+    const snapshot = await db
+      .collection('expense_drafts')
+      .where('status', '==', 'pending')
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .get();
+
+    const drafts = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    res.status(200).json({ success: true, drafts });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /expenses/categorize
+// AI categorize an expense (creates a draft).
+// Body: { expenseId, suggestedAccountId? }
+// ---------------------------------------------------------------------------
+
+router.post('/expenses/categorize', async (req, res) => {
+  try {
+    await ensureValidToken();
+    await handleCategorize(req, res);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /expenses/drafts/:id/approve
+// Apply the suggested category to the QBO expense.
+// ---------------------------------------------------------------------------
+
+router.post('/expenses/drafts/:id/approve', async (req, res) => {
+  try {
+    await ensureValidToken();
+    await handleExpenseApproveDraft(req, res);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /expenses/drafts/:id/reject
+// Reject an expense categorization draft.
+// ---------------------------------------------------------------------------
+
+router.post('/expenses/drafts/:id/reject', async (req, res) => {
+  try {
+    await handleExpenseRejectDraft(req, res);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /expenses
+// Returns expense categorization history from logs, limit 100.
+// ---------------------------------------------------------------------------
+
+router.get('/expenses', async (req, res) => {
+  try {
+    const db = getFirestore();
+    const snapshot = await db
+      .collection('logs')
+      .where('module', '==', 'expense')
+      .where('action', '==', 'push-to-qbo')
+      .orderBy('timestamp', 'desc')
+      .limit(100)
+      .get();
+
+    const history = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      const details = data.details || {};
+      const timestampIso = data.timestamp
+        ? (data.timestamp.toDate ? data.timestamp.toDate().toISOString() : new Date(data.timestamp._seconds * 1000).toISOString())
+        : null;
+      return {
+        id: doc.id,
+        status: data.status,
+        timestamp: timestampIso,
+        vendorName: details.vendorName || null,
+        expenseId: details.expenseId || null,
+        accountName: details.accountName || null,
+        accountId: details.accountId || null,
+        total: details.total || null,
+        intuitTid: details.intuitTid || null,
+        errorMessage: details.errorMessage || null,
+      };
+    });
+
+    res.status(200).json({ success: true, history });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /accounts
+// Returns cached QBO accounts list for dropdown selections.
+// ---------------------------------------------------------------------------
+
+router.get('/accounts', async (req, res) => {
+  try {
+    await ensureValidToken();
+    const realmId = await getRealmId();
+    const accounts = await getCachedAccounts(realmId);
+
+    const expenseAccounts = accounts
+      .filter((a) => {
+        const type = (a.AccountType || '').toLowerCase();
+        return type === 'expense' || type === 'cost of goods sold' || type === 'other expense';
+      })
+      .map((a) => ({
+        id: a.Id,
+        name: a.Name,
+        type: a.AccountType,
+        fullyQualifiedName: a.FullyQualifiedName || a.Name,
+      }));
+
+    res.status(200).json({ success: true, accounts: expenseAccounts });
+  } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });

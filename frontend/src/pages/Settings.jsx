@@ -193,6 +193,7 @@ function TextInput({ value, onChange, placeholder, readOnly, className = '' }) {
 // ---------------------------------------------------------------------------
 export default function Settings() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [savedSettings, setSavedSettings] = useState(null);
   const [pageLoading, setPageLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [toast, setToast] = useState(null); // { message, type }
@@ -203,8 +204,21 @@ export default function Settings() {
   const [resetConfirm, setResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
 
+  const isDirty = savedSettings !== null && JSON.stringify(settings) !== JSON.stringify(savedSettings);
+
   const showToast = (message, type = 'success') => setToast({ message, type });
   const dismissToast = useCallback(() => setToast(null), []);
+
+  // Warn on tab close / refresh when there are unsaved changes
+  useEffect(() => {
+    const handler = (e) => {
+      if (!isDirty) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
 
   useEffect(() => {
     async function load() {
@@ -212,7 +226,9 @@ export default function Settings() {
       try {
         const res = await api.getSettings();
         const data = res.settings ?? res.data?.settings ?? res.data ?? res;
-        setSettings(deepMerge(DEFAULT_SETTINGS, data));
+        const merged = deepMerge(DEFAULT_SETTINGS, data);
+        setSettings(merged);
+        setSavedSettings(JSON.parse(JSON.stringify(merged)));
       } catch (err) {
         setLoadError(err.message || 'Failed to load settings.');
       } finally {
@@ -240,6 +256,8 @@ export default function Settings() {
     setSaving((s) => ({ ...s, [sectionKey]: true }));
     try {
       await api.updateSettings(payload);
+      // Snapshot current settings as "saved" baseline
+      setSavedSettings(JSON.parse(JSON.stringify(settings)));
       showToast('Settings saved.', 'success');
     } catch (err) {
       showToast(err.message || 'Failed to save settings.', 'error');
@@ -252,7 +270,9 @@ export default function Settings() {
     setResetting(true);
     try {
       await api.updateSettings(BACKEND_DEFAULTS);
-      setSettings(deepMerge(DEFAULT_SETTINGS, BACKEND_DEFAULTS));
+      const resetMerged = deepMerge(DEFAULT_SETTINGS, BACKEND_DEFAULTS);
+      setSettings(resetMerged);
+      setSavedSettings(JSON.parse(JSON.stringify(resetMerged)));
       setResetConfirm(false);
       showToast('Settings reset to defaults.', 'success');
     } catch (err) {
@@ -325,6 +345,14 @@ export default function Settings() {
         <h1 className="text-2xl font-bold text-atd-dark">Settings</h1>
         <p className="text-gray-500 text-sm mt-1">Configure the ATD QBO Platform</p>
       </div>
+
+      {/* Unsaved changes indicator */}
+      {isDirty && (
+        <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-800 rounded-lg px-4 py-2.5 text-sm font-medium">
+          <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse" />
+          You have unsaved changes
+        </div>
+      )}
 
       {loadError && (
         <div className="flex items-center gap-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-lg px-4 py-3 text-sm">

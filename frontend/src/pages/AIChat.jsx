@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Bot, User, Trash2, Copy } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { api } from '../utils/api';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 
@@ -16,27 +17,48 @@ function formatTime(ts) {
   } catch { return ''; }
 }
 
-/**
- * Sanitize and format AI message content for safe rendering.
- * Escapes HTML and then allows safe markdown-like formatting.
- */
-function formatMessage(text) {
-  if (!text) return '';
-  
-  // First escape any HTML to prevent XSS
-  const escaped = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-  
-  // Then apply safe formatting (no HTML tags in the result)
-  return escaped
-    .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono">$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*]+)\*/g, '<em>$1</em>');
-}
+/** Custom component overrides for ReactMarkdown with Tailwind styling */
+const markdownComponents = {
+  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+  strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  h1: ({ children }) => <h1 className="text-lg font-bold text-gray-900 mt-3 mb-1">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-base font-bold text-gray-900 mt-3 mb-1">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-sm font-bold text-gray-900 mt-2 mb-1">{children}</h3>,
+  ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-0.5">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-0.5">{children}</ol>,
+  li: ({ children }) => <li className="text-gray-700">{children}</li>,
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline">
+      {children}
+    </a>
+  ),
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-4 border-gray-300 pl-3 my-2 text-gray-600 italic">{children}</blockquote>
+  ),
+  code: ({ inline, className, children }) => {
+    if (inline) {
+      return (
+        <code className="bg-gray-100 text-gray-800 px-1.5 py-0.5 rounded text-xs font-mono">{children}</code>
+      );
+    }
+    return (
+      <pre className="bg-gray-900 text-gray-100 rounded-lg p-3 my-2 overflow-x-auto text-xs leading-relaxed">
+        <code className={className}>{children}</code>
+      </pre>
+    );
+  },
+  pre: ({ children }) => <>{children}</>,
+  table: ({ children }) => (
+    <div className="overflow-x-auto my-2">
+      <table className="min-w-full text-xs border border-gray-200 rounded">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-gray-100">{children}</thead>,
+  th: ({ children }) => <th className="px-3 py-1.5 text-left font-semibold text-gray-700 border-b border-gray-200">{children}</th>,
+  td: ({ children }) => <td className="px-3 py-1.5 border-b border-gray-100 text-gray-600">{children}</td>,
+  hr: () => <hr className="my-3 border-gray-200" />,
+};
 
 function SourceBadge({ source }) {
   const map = {
@@ -86,11 +108,10 @@ function AssistantMessage({ msg, onRetry, prevUserContent }) {
         <Bot className="h-4 w-4 text-gray-500" />
       </div>
       <div className="max-w-2xl">
-        <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed text-gray-700 whitespace-pre-wrap">
-          <div
-            className="whitespace-pre-wrap"
-            dangerouslySetInnerHTML={{ __html: formatMessage(msg.content) }}
-          />
+        <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed text-gray-700">
+          <ReactMarkdown components={markdownComponents}>
+            {msg.content || ''}
+          </ReactMarkdown>
         </div>
         <div className="flex items-center gap-2 mt-1">
           {msg.source && <SourceBadge source={msg.source} />}
@@ -143,12 +164,28 @@ function TypingIndicator() {
 }
 
 export default function AIChat() {
-  const [messages, setMessages] = useState([]);
+  // Load persisted messages from sessionStorage on mount
+  const [messages, setMessages] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem('atd-ai-chat');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [aiSource, setAiSource] = useState({ label: 'Checking...', color: 'bg-gray-300' });
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
+  // Ref to avoid stale closure in handleKeyDown — always reads current input value
+  const inputRef = useRef('');
+  useEffect(() => { inputRef.current = input; }, [input]);
+
+  // Persist messages to sessionStorage whenever they change
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('atd-ai-chat', JSON.stringify(messages));
+    } catch { /* storage full or unavailable */ }
+  }, [messages]);
 
   useEffect(() => {
     api.getHealth()
@@ -237,12 +274,15 @@ export default function AIChat() {
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      // Use inputRef to avoid stale closure — always reads the current input value
+      const text = inputRef.current;
+      if (text.trim()) sendMessage(text);
     }
   }
 
   function clearChat() {
     setMessages([]);
+    try { sessionStorage.removeItem('atd-ai-chat'); } catch { /* ignore */ }
   }
 
   const isEmpty = messages.length === 0;

@@ -10,6 +10,7 @@ import {
   FileText,
   Receipt,
   CreditCard,
+  Wallet,
   Menu,
   X,
   Link2,
@@ -21,6 +22,10 @@ import {
 const mainNavItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart },
+  { to: '/invoices', label: 'Invoices', icon: FileText },
+  { to: '/bills', label: 'Bills', icon: Receipt },
+  { to: '/payments', label: 'Payments', icon: CreditCard },
+  { to: '/expenses', label: 'Expenses', icon: Wallet },
   { to: '/ai-chat', label: 'AI Chat', icon: MessageSquare },
   { to: '/qbo-connect', label: 'QBO Connect', icon: Link2 },
   { to: '/settings', label: 'Settings', icon: Settings },
@@ -29,11 +34,7 @@ const mainNavItems = [
   { to: '/help', label: 'Help & Docs', icon: HelpCircle },
 ];
 
-const comingSoonItems = [
-  { label: 'Invoices', icon: FileText },
-  { label: 'Bills', icon: Receipt },
-  { label: 'Payments', icon: CreditCard },
-];
+const comingSoonItems = [];
 
 function SidebarContent({ onClose }) {
   return (
