@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Plus,
   X,
@@ -12,20 +12,13 @@ import {
   Search,
 } from 'lucide-react';
 import { api } from '../utils/api';
+import { formatCurrency, formatDateTime, generateId, getTodayDate } from '../utils/helpers';
 import Toggle from '../components/shared/Toggle';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function formatCurrency(val) {
-  const num = parseFloat(val) || 0;
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(num);
-}
-
-function today() {
-  return new Date().toISOString().split('T')[0];
-}
 
 function StatusBadge({ status }) {
   const map = {
@@ -62,7 +55,7 @@ const SHIP_TO_ADDRESS = 'American Tile Depot, 1440 S State College Blvd Ste 6G, 
 const UNIT_OPTIONS = ['Sq Ft', 'Box', 'Piece', 'Each', 'Linear Ft', 'Pallet', 'Sheet', 'Case', 'Roll', 'Other'];
 
 const emptyLine = () => ({
-  _id: Math.random().toString(36).slice(2),
+  _id: generateId(),
   itemId: '',
   itemName: '',
   sku: '',
@@ -436,7 +429,7 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
     vendorId: '',
     vendorName: '',
     vendorEmail: '',
-    txnDate: today(),
+    txnDate: getTodayDate(),
     memo: '',
     vendorMessage: '',
     poNumber: '',
@@ -457,7 +450,7 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
       vendorId: '',
       vendorName: '',
       vendorEmail: '',
-      txnDate: today(),
+      txnDate: getTodayDate(),
       memo: '',
       vendorMessage: '',
       poNumber: '',
@@ -469,9 +462,11 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
     setVendorOpen(false);
   }
 
-  const filteredVendors = vendors.filter((v) =>
-    v.DisplayName?.toLowerCase().includes(vendorSearch.toLowerCase())
-  );
+  const filteredVendors = useMemo(() => {
+    if (!vendorSearch.trim()) return vendors;
+    const search = vendorSearch.toLowerCase();
+    return vendors.filter((v) => v.DisplayName?.toLowerCase().includes(search));
+  }, [vendors, vendorSearch]);
 
   const vendorDropdownRef = useRef(null);
 

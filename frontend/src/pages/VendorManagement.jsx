@@ -48,10 +48,8 @@ export default function VendorManagement() {
     try {
       const res = await api.post('/vendor-mappings/sync', {});
       const data = res.data ?? res;
-      console.log('Sync response:', JSON.stringify(data, null, 2));
       const mappings = data.mappings || {};
       const vendorList = Array.isArray(mappings.vendors) ? mappings.vendors : [];
-      console.log('Vendors from sync:', vendorList.length, vendorList);
       setVendors(vendorList);
       setSavedVendors(JSON.parse(JSON.stringify(vendorList)));
       setLastSynced(mappings.last_synced || new Date().toISOString());
@@ -61,7 +59,6 @@ export default function VendorManagement() {
         showToast(`Synced ${vendorList.length} vendors from QuickBooks.`);
       }
     } catch (err) {
-      console.error('Sync error:', err);
       showToast(err.message || 'Failed to sync vendors.', 'error');
     } finally {
       setSyncing(false);

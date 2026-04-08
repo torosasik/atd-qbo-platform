@@ -16,9 +16,23 @@ function formatTime(ts) {
   } catch { return ''; }
 }
 
+/**
+ * Sanitize and format AI message content for safe rendering.
+ * Escapes HTML and then allows safe markdown-like formatting.
+ */
 function formatMessage(text) {
   if (!text) return '';
-  return text
+  
+  // First escape any HTML to prevent XSS
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+  
+  // Then apply safe formatting (no HTML tags in the result)
+  return escaped
     .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono">$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>');
