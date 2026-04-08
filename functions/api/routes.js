@@ -575,6 +575,14 @@ router.get('/customers', async (req, res) => {
     const customers = await getCachedCustomers(realmId);
     res.status(200).json({ success: true, customers });
   } catch (err) {
+    if (err.code === 'QBO_AUTH_EXPIRED') {
+      return res.status(200).json({
+        success: false,
+        error: 'QuickBooks connection is not available',
+        fix: 'Go to QBO Connect page and click Connect to QuickBooks',
+        code: 'QBO_TOKEN_EXPIRED',
+      });
+    }
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -591,6 +599,14 @@ router.get('/vendors', async (req, res) => {
     const vendors = await getCachedVendors(realmId);
     res.status(200).json({ success: true, vendors });
   } catch (err) {
+    if (err.code === 'QBO_AUTH_EXPIRED') {
+      return res.status(200).json({
+        success: false,
+        error: 'QuickBooks connection is not available',
+        fix: 'Go to QBO Connect page and click Connect to QuickBooks',
+        code: 'QBO_TOKEN_EXPIRED',
+      });
+    }
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -607,6 +623,14 @@ router.get('/items', async (req, res) => {
     const items = await getCachedItems(realmId);
     res.status(200).json({ success: true, items });
   } catch (err) {
+    if (err.code === 'QBO_AUTH_EXPIRED') {
+      return res.status(200).json({
+        success: false,
+        error: 'QuickBooks connection is not available',
+        fix: 'Go to QBO Connect page and click Connect to QuickBooks',
+        code: 'QBO_TOKEN_EXPIRED',
+      });
+    }
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -973,23 +997,58 @@ const VENDOR_MAPPINGS_DOC = 'settings/vendor_mappings';
 router.get('/vendor-mappings', async (req, res) => {
   try {
     const db = getFirestore();
-    const docSnap = await db.doc(VENDOR_MAPPINGS_DOC).get();
+    let docSnap = await db.doc(VENDOR_MAPPINGS_DOC).get();
+    let data = docSnap.exists ? docSnap.data() : null;
+    const vendors = data ? (data.vendors || []) : [];
 
-    if (!docSnap.exists) {
-      return res.status(200).json({
-        success: true,
-        mappings: { vendors: [], last_synced: null },
-      });
+    // Auto-sync from QBO if Firestore doc is empty/missing
+    if (vendors.length === 0) {
+      try {
+        await ensureValidToken();
+        const realmId = await getRealmId();
+        const qboVendors = await refreshVendors(realmId);
+
+        if (Array.isArray(qboVendors) && qboVendors.length > 0) {
+          const merged = qboVendors.map((qv) => ({
+            qbo_id: String(qv.Id),
+            qbo_name: qv.DisplayName || qv.CompanyName || '',
+            active: false,
+            shopify_code: '',
+          }));
+
+          await db.doc(VENDOR_MAPPINGS_DOC).set({
+            vendors: merged,
+            last_synced: FieldValue.serverTimestamp(),
+          });
+
+          // Read back for timestamp
+          docSnap = await db.doc(VENDOR_MAPPINGS_DOC).get();
+          data = docSnap.data();
+
+          await logAction('vendor-management', 'auto-sync', 'success', {
+            total: merged.length,
+            trigger: 'empty-vendor-mappings-get',
+          });
+        }
+      } catch (syncErr) {
+        // QBO not connected — return empty mappings gracefully
+        await logAction('vendor-management', 'auto-sync', 'skipped', {
+          reason: syncErr.message,
+        });
+      }
     }
 
-    const data = docSnap.data();
+    // Re-read data after potential auto-sync
+    const finalVendors = data ? (data.vendors || []) : [];
+    const lastSynced = data && data.last_synced
+      ? (data.last_synced.toDate ? data.last_synced.toDate().toISOString() : data.last_synced)
+      : null;
+
     return res.status(200).json({
       success: true,
       mappings: {
-        vendors: data.vendors || [],
-        last_synced: data.last_synced
-          ? (data.last_synced.toDate ? data.last_synced.toDate().toISOString() : data.last_synced)
-          : null,
+        vendors: finalVendors,
+        last_synced: lastSynced,
       },
     });
   } catch (err) {

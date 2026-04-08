@@ -10,6 +10,7 @@ import {
   Search,
 } from 'lucide-react';
 import { api, getErrorMessage } from '../utils/api';
+import { getCached, setCache } from '../utils/dataCache';
 import { formatCurrency, formatDateTime } from '../utils/helpers';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 
@@ -148,12 +149,21 @@ export default function Expenses() {
     setLoading(true);
     setError(null);
     try {
-      const [expRes, acctRes] = await Promise.all([
-        api.getUncategorizedExpenses(),
-        api.getAccounts(),
-      ]);
+      // Use cached accounts if available to avoid duplicate fetches
+      const cachedAccounts = getCached('accounts');
+      const expPromise = api.getUncategorizedExpenses();
+      const acctPromise = cachedAccounts ? Promise.resolve(null) : api.getAccounts();
+
+      const [expRes, acctRes] = await Promise.all([expPromise, acctPromise]);
       setExpenses(expRes.expenses || []);
-      setAccounts(acctRes.accounts || []);
+
+      if (acctRes) {
+        const accountList = acctRes.accounts || [];
+        setCache('accounts', accountList);
+        setAccounts(accountList);
+      } else {
+        setAccounts(cachedAccounts);
+      }
     } catch (err) {
       const { message } = getErrorMessage(err);
       setError(message);

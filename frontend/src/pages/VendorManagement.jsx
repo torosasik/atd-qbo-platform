@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { RefreshCw, Save, Search, AlertCircle } from 'lucide-react';
+import { RefreshCw, Save, Search, AlertCircle, Link2, Unplug } from 'lucide-react';
 import { api } from '../utils/api';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import Toast from '../components/shared/Toast';
@@ -14,6 +14,7 @@ export default function VendorManagement() {
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState(null);
   const [loadError, setLoadError] = useState(null);
+  const [qboConnected, setQboConnected] = useState(null); // null = unknown, true/false
 
   const hasUnsavedChanges = savedVendors !== null && JSON.stringify(vendors) !== JSON.stringify(savedVendors);
 
@@ -39,13 +40,22 @@ export default function VendorManagement() {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await api.get('/vendor-mappings');
-      const data = res.data ?? res;
+      const [mappingsResult, authResult] = await Promise.all([
+        api.get('/vendor-mappings'),
+        api.getAuthStatus().catch(() => ({ connected: false })),
+      ]);
+      const data = mappingsResult.data ?? mappingsResult;
       const mappings = data.mappings || {};
       const loadedVendors = Array.isArray(mappings.vendors) ? mappings.vendors : [];
       setVendors(loadedVendors);
       setSavedVendors(JSON.parse(JSON.stringify(loadedVendors)));
       setLastSynced(mappings.last_synced || null);
+      setQboConnected(!!authResult.connected);
+
+      // Auto-sync if connected but no vendors yet
+      if (loadedVendors.length === 0 && authResult.connected) {
+        handleSync();
+      }
     } catch (err) {
       setLoadError(err.message || 'Failed to load vendor mappings.');
       setVendors([]);
@@ -195,10 +205,38 @@ export default function VendorManagement() {
 
       {/* Vendor table */}
       {vendors.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm px-6 py-12 text-center">
-          <p className="text-gray-400 text-sm">
-            No vendors synced yet. Click Sync from QuickBooks to get started.
-          </p>
+        <div className="bg-white rounded-xl shadow-sm px-6 py-12 text-center space-y-4">
+          {qboConnected === false ? (
+            <>
+              <Unplug className="h-10 w-10 text-gray-300 mx-auto" />
+              <p className="text-gray-600 font-medium">Connect to QuickBooks First</p>
+              <p className="text-gray-400 text-sm max-w-md mx-auto">
+                You need to connect your QuickBooks account before vendors can be synced.
+                Go to <a href="/connect" className="text-atd-blue hover:underline font-medium">QBO Connect</a> to get started.
+              </p>
+            </>
+          ) : syncing ? (
+            <>
+              <RefreshCw className="h-10 w-10 text-atd-blue mx-auto animate-spin" />
+              <p className="text-gray-500 text-sm">Syncing vendors from QuickBooks...</p>
+            </>
+          ) : (
+            <>
+              <Link2 className="h-10 w-10 text-atd-blue mx-auto" />
+              <p className="text-gray-600 font-medium">No Vendors Synced Yet</p>
+              <p className="text-gray-400 text-sm max-w-md mx-auto">
+                Your QuickBooks account is connected. Sync your vendor list to manage mappings and enable purchase orders, bills, and more.
+              </p>
+              <button
+                onClick={handleSync}
+                disabled={syncing}
+                className="inline-flex items-center gap-2 bg-atd-blue hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Sync Vendors from QuickBooks
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm">

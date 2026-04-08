@@ -12,6 +12,7 @@ import {
   Search,
 } from 'lucide-react';
 import { api } from '../utils/api';
+import { getCached, setCache } from '../utils/dataCache';
 import { formatCurrency, formatDateTime, generateId, getTodayDate } from '../utils/helpers';
 import Toggle from '../components/shared/Toggle';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
@@ -1408,40 +1409,70 @@ export default function Invoices({ initialTab }) {
     try {
       const res = await api.getItems();
       const itemList = res.items || res.data || res;
-      setItems(Array.isArray(itemList) ? itemList : []);
+      const parsed = Array.isArray(itemList) ? itemList : [];
+      setCache('items', parsed);
+      setItems(parsed);
     } catch {
       // silently fail, items will remain as they are
     }
   }
 
+  async function refreshData() {
+    setCustomersLoading(true);
+    try {
+      const [customersRes, iRes] = await Promise.all([
+        api.getCustomers(),
+        api.getItems(),
+      ]);
+      const customerList = customersRes.customers || customersRes.data?.customers || [];
+      const parsedCustomers = Array.isArray(customerList) ? customerList : [];
+      setCache('customers', parsedCustomers);
+      setCustomers(parsedCustomers);
+
+      const itemList = iRes.items || iRes.data || iRes;
+      const parsedItems = Array.isArray(itemList) ? itemList : [];
+      setCache('items', parsedItems);
+      setItems(parsedItems);
+    } catch (err) {
+      console.error('[Invoices] Failed to load lists:', err);
+    } finally {
+      setCustomersLoading(false);
+    }
+  }
+
   useEffect(() => {
     async function loadLists() {
-      setCustomersLoading(true);
-      try {
-        const [customersRes, iRes] = await Promise.all([
-          api.getCustomers(),
-          api.getItems(),
-        ]);
-        // Customers for dropdown
-        const customerList = customersRes.customers || customersRes.data?.customers || [];
-        setCustomers(Array.isArray(customerList) ? customerList : []);
-        // Items
-        const itemList = iRes.items || iRes.data || iRes;
-        setItems(Array.isArray(itemList) ? itemList : []);
-      } catch (err) {
-        console.error('[Invoices] Failed to load lists:', err);
-      } finally {
+      // Try cache first
+      const cachedCustomers = getCached('customers');
+      const cachedItems = getCached('items');
+      if (cachedCustomers && cachedItems) {
+        setCustomers(cachedCustomers);
+        setItems(cachedItems);
         setCustomersLoading(false);
+        return;
       }
+      // Fallback to API
+      await refreshData();
     }
     loadLists();
   }, []);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-atd-dark">Invoices</h1>
-        <p className="text-gray-500 text-sm mt-1">Create, review, and manage invoices for customers</p>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-atd-dark">Invoices</h1>
+          <p className="text-gray-500 text-sm mt-1">Create, review, and manage invoices for customers</p>
+        </div>
+        <button
+          onClick={refreshData}
+          disabled={customersLoading}
+          className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+          title="Refresh customers & items from QuickBooks"
+        >
+          <RefreshCw className={`w-4 h-4 ${customersLoading ? 'animate-spin' : ''}`} />
+          Refresh Data
+        </button>
       </div>
 
       {/* Tab bar */}

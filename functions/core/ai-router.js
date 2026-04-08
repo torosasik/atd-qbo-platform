@@ -41,12 +41,18 @@ async function loadAiSettings() {
       confidenceThreshold: typeof settings.ai.min_confidence === 'number'
         ? settings.ai.min_confidence
         : DEFAULT_SETTINGS.ai.min_confidence,
+      ollamaEnabled: typeof settings.ai.ollama_enabled === 'boolean'
+        ? settings.ai.ollama_enabled
+        : DEFAULT_SETTINGS.ai.ollama_enabled,
+      preferredProvider: settings.ai.preferred_provider || DEFAULT_SETTINGS.ai.preferred_provider,
     };
   } catch (_err) {
     return {
       ollamaUrl: DEFAULT_SETTINGS.ai.ollama_url,
       claudeModel: DEFAULT_SETTINGS.ai.claude_model,
       confidenceThreshold: DEFAULT_SETTINGS.ai.min_confidence,
+      ollamaEnabled: DEFAULT_SETTINGS.ai.ollama_enabled,
+      preferredProvider: DEFAULT_SETTINGS.ai.preferred_provider,
     };
   }
 }
@@ -177,77 +183,103 @@ async function callClaude(prompt, claudeModel) {
 async function askAI(prompt, options = {}) {
   const module = options.module || 'unknown';
 
-  const { ollamaUrl, claudeModel, confidenceThreshold } = await loadAiSettings();
+  const { ollamaUrl, claudeModel, confidenceThreshold, ollamaEnabled, preferredProvider } = await loadAiSettings();
   const ollamaModel = options.ollamaModel || DEFAULT_SETTINGS.ai.ollama_model;
 
-  // -------------------------------------------------------------------------
-  // Attempt 1: Ollama (local, free)
-  // -------------------------------------------------------------------------
-  const ollamaReachable = await isOllamaAvailable(ollamaUrl);
+  // Determine which providers to try based on preferred_provider setting
+  const useOllama = preferredProvider === 'ollama-only' ||
+    (preferredProvider === 'auto' && ollamaEnabled);
+  const useClaude = preferredProvider === 'claude-only' ||
+    preferredProvider === 'auto';
+  const ollamaOnly = preferredProvider === 'ollama-only';
+  const claudeOnly = preferredProvider === 'claude-only';
 
-  if (ollamaReachable) {
-    try {
-      const content = await callOllama(prompt, ollamaModel, ollamaUrl);
-      const confidence = parseOllamaConfidence(content);
+  // -------------------------------------------------------------------------
+  // Attempt 1: Ollama (local, free) – skipped when claude-only or ollama disabled
+  // -------------------------------------------------------------------------
+  if (useOllama && !claudeOnly) {
+    const ollamaReachable = await isOllamaAvailable(ollamaUrl);
 
-      if (confidence >= confidenceThreshold) {
-        await logAction(module, 'ai-review', 'success', {
+    if (ollamaReachable) {
+      try {
+        const content = await callOllama(prompt, ollamaModel, ollamaUrl);
+        const confidence = parseOllamaConfidence(content);
+
+        if (confidence >= confidenceThreshold || ollamaOnly) {
+          await logAction(module, 'ai-review', 'success', {
+            source: 'ollama',
+            model: ollamaModel,
+            confidence,
+            promptLength: prompt.length,
+          });
+          return { answer: content, confidence, source: 'ollama' };
+        }
+
+        // Low confidence from Ollama: escalate to Claude (only in 'auto' mode).
+        // The Claude call happens in the block below; fall through intentionally.
+      } catch (ollamaErr) {
+        await logAction(module, 'ai-review', 'error', {
           source: 'ollama',
           model: ollamaModel,
-          confidence,
+          confidence: 0,
           promptLength: prompt.length,
+          error: ollamaErr.message,
         });
-        return { answer: content, confidence, source: 'ollama' };
+        // If ollama-only, do not fall through to Claude.
+        if (ollamaOnly) {
+          return { answer: '', confidence: 0, source: 'none' };
+        }
+        // Fall through to Claude.
       }
-
-      // Low confidence from Ollama: escalate to Claude.
-      // The Claude call happens in the block below; fall through intentionally.
-    } catch (ollamaErr) {
-      await logAction(module, 'ai-review', 'error', {
-        source: 'ollama',
+    } else if (ollamaOnly) {
+      // Ollama-only mode but Ollama is unreachable – fail immediately.
+      await logAction(module, 'ai-review', 'skipped', {
+        source: 'none',
         model: ollamaModel,
         confidence: 0,
         promptLength: prompt.length,
-        error: ollamaErr.message,
+        reason: 'Ollama is unreachable and preferred_provider is ollama-only',
       });
-      // Fall through to Claude.
+      return { answer: '', confidence: 0, source: 'none' };
     }
   }
 
   // -------------------------------------------------------------------------
-  // Attempt 2: Claude API (cloud, paid)
+  // Attempt 2: Claude API (cloud, paid) – skipped when ollama-only
   // -------------------------------------------------------------------------
-  try {
-    const content = await callClaude(prompt, claudeModel);
-    const confidence = 95;
+  if (useClaude && !ollamaOnly) {
+    try {
+      const content = await callClaude(prompt, claudeModel);
+      const confidence = 95;
 
-    await logAction(module, 'ai-review', 'success', {
-      source: 'claude',
-      model: claudeModel,
-      confidence,
-      promptLength: prompt.length,
-    });
+      await logAction(module, 'ai-review', 'success', {
+        source: 'claude',
+        model: claudeModel,
+        confidence,
+        promptLength: prompt.length,
+      });
 
-    return { answer: content, confidence, source: 'claude' };
-  } catch (claudeErr) {
-    await logAction(module, 'ai-review', 'error', {
-      source: 'claude',
-      model: claudeModel,
-      confidence: 0,
-      promptLength: prompt.length,
-      error: claudeErr.message,
-    });
+      return { answer: content, confidence, source: 'claude' };
+    } catch (claudeErr) {
+      await logAction(module, 'ai-review', 'error', {
+        source: 'claude',
+        model: claudeModel,
+        confidence: 0,
+        promptLength: prompt.length,
+        error: claudeErr.message,
+      });
+    }
   }
 
   // -------------------------------------------------------------------------
-  // Attempt 3: Both unavailable. Skip AI review and flag for human decision.
+  // Attempt 3: All configured providers unavailable. Skip AI review.
   // -------------------------------------------------------------------------
   await logAction(module, 'ai-review', 'skipped', {
     source: 'none',
     model: null,
     confidence: 0,
     promptLength: prompt.length,
-    reason: 'Both Ollama and Claude API are unavailable',
+    reason: 'All configured AI providers are unavailable',
   });
 
   return { answer: '', confidence: 0, source: 'none' };

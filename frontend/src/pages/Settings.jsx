@@ -58,6 +58,8 @@ const BACKEND_DEFAULTS = {
     ollama_model: 'qwen3.5-coder-35b:latest',
     ollama_url: 'http://localhost:11434',
     claude_model: 'claude-sonnet-4-20250514',
+    ollama_enabled: true,
+    preferred_provider: 'auto',
   },
   qbo: {
     environment: 'production',
@@ -101,6 +103,8 @@ const DEFAULT_SETTINGS = {
     ollama_url: 'http://localhost:11434',
     ollama_model: 'qwen3.5-coder-35b:latest',
     claude_model: 'claude-sonnet-4-20250514',
+    ollama_enabled: true,
+    preferred_provider: 'auto',
   },
   qbo: {
     environment: 'production',
@@ -552,6 +556,8 @@ export default function Settings() {
               ollama_url: ai.ollama_url,
               ollama_model: ai.ollama_model,
               claude_model: ai.claude_model,
+              ollama_enabled: ai.ollama_enabled,
+              preferred_provider: ai.preferred_provider,
             },
           })
         }
@@ -577,6 +583,32 @@ export default function Settings() {
             onChange={(v) => setNested('ai.auto_review', v)}
             disabled={!ai.enabled}
           />
+        </FieldRow>
+        <FieldRow
+          label="Ollama Enabled"
+          tooltip="Enable local Ollama AI provider. When disabled, Ollama will be skipped even in Auto mode."
+        >
+          <Toggle
+            id="ai-ollama-enabled"
+            checked={ai.ollama_enabled !== false}
+            onChange={(v) => setNested('ai.ollama_enabled', v)}
+            disabled={!ai.enabled}
+          />
+        </FieldRow>
+        <FieldRow
+          label="Preferred AI Provider"
+          tooltip="Auto: try Ollama first, fall back to Claude. Ollama Only: never use Claude. Claude Only: skip Ollama entirely."
+        >
+          <select
+            value={ai.preferred_provider || 'auto'}
+            onChange={(e) => setNested('ai.preferred_provider', e.target.value)}
+            disabled={!ai.enabled}
+            className="w-full sm:w-64 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <option value="auto">Auto (Ollama → Claude)</option>
+            <option value="ollama-only">Ollama Only</option>
+            <option value="claude-only">Claude Only</option>
+          </select>
         </FieldRow>
         <FieldRow
           label="Min Confidence (%)"

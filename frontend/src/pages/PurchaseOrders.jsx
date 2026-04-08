@@ -14,6 +14,7 @@ import {
   Search,
 } from 'lucide-react';
 import { api } from '../utils/api';
+import { getCached, setCache, invalidateAll } from '../utils/dataCache';
 import { formatCurrency, formatDateTime, generateId, getTodayDate } from '../utils/helpers';
 import Toggle from '../components/shared/Toggle';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
@@ -1599,47 +1600,85 @@ export default function PurchaseOrders({ initialTab }) {
     try {
       const res = await api.getItems();
       const itemList = res.items || res.data || res;
-      setItems(Array.isArray(itemList) ? itemList : []);
+      const parsed = Array.isArray(itemList) ? itemList : [];
+      setCache('items', parsed);
+      setItems(parsed);
     } catch {
       // silently fail, items will remain as they are
     }
   }
 
-  useEffect(() => {
-    async function loadLists() {
-      setVendorsLoading(true);
-      try {
-        const [mappingsRes, vendorsRes, iRes] = await Promise.all([
-          api.getVendorMappings(),
-          api.getVendors(),
-          api.getItems(),
-        ]);
-        // Active vendors for dropdown (from mappings)
+  // Shared loader — checks cache first, fetches from API on miss
+  const loadLists = useCallback(async () => {
+    setVendorsLoading(true);
+    try {
+      // --- Vendor Mappings (→ vendors dropdown) ---
+      let activeVendors = getCached('vendors');
+      let cachedMappingsRaw = getCached('vendorMappings');
+      if (!activeVendors || !cachedMappingsRaw) {
+        const mappingsRes = await api.getVendorMappings();
+        cachedMappingsRaw = mappingsRes;
+        setCache('vendorMappings', mappingsRes);
         const allVendors = mappingsRes.mappings?.vendors || [];
-        const activeVendors = allVendors
+        activeVendors = allVendors
           .filter((v) => v.active)
           .map((v) => ({ Id: v.qbo_id, DisplayName: v.qbo_name }));
-        setVendors(activeVendors);
-        // Full QBO vendor data for email lookup
-        const qboVendorList = vendorsRes.vendors || vendorsRes.data?.vendors || [];
-        setQboVendors(Array.isArray(qboVendorList) ? qboVendorList : []);
-        // Items
-        const itemList = iRes.items || iRes.data || iRes;
-        setItems(Array.isArray(itemList) ? itemList : []);
-      } catch (err) {
-        console.error('[PurchaseOrders] Failed to load lists:', err);
-      } finally {
-        setVendorsLoading(false);
+        setCache('vendors', activeVendors);
       }
+      setVendors(activeVendors);
+
+      // --- QBO Vendors (full list for email lookup) ---
+      let qboVendorList = getCached('qboVendors');
+      if (!qboVendorList) {
+        const vendorsRes = await api.getVendors();
+        qboVendorList = vendorsRes.vendors || vendorsRes.data?.vendors || [];
+        qboVendorList = Array.isArray(qboVendorList) ? qboVendorList : [];
+        setCache('qboVendors', qboVendorList);
+      }
+      setQboVendors(qboVendorList);
+
+      // --- Items ---
+      let itemList = getCached('items');
+      if (!itemList) {
+        const iRes = await api.getItems();
+        itemList = iRes.items || iRes.data || iRes;
+        itemList = Array.isArray(itemList) ? itemList : [];
+        setCache('items', itemList);
+      }
+      setItems(itemList);
+    } catch (err) {
+      console.error('[PurchaseOrders] Failed to load lists:', err);
+    } finally {
+      setVendorsLoading(false);
     }
-    loadLists();
   }, []);
+
+  useEffect(() => {
+    loadLists();
+  }, [loadLists]);
+
+  // Refresh Data: invalidate all caches and re-fetch
+  async function handleRefreshData() {
+    invalidateAll();
+    await loadLists();
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-atd-dark">Purchase Orders</h1>
-        <p className="text-gray-500 text-sm mt-1">Create, review, and manage purchase orders</p>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-atd-dark">Purchase Orders</h1>
+          <p className="text-gray-500 text-sm mt-1">Create, review, and manage purchase orders</p>
+        </div>
+        <button
+          onClick={handleRefreshData}
+          disabled={vendorsLoading}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:text-atd-blue transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Clear cached data and re-fetch from server"
+        >
+          <RefreshCw className={`h-4 w-4 ${vendorsLoading ? 'animate-spin' : ''}`} />
+          Refresh Data
+        </button>
       </div>
 
       {/* Tab bar */}

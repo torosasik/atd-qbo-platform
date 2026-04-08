@@ -13,6 +13,7 @@ import {
   DollarSign,
 } from 'lucide-react';
 import { api } from '../utils/api';
+import { getCached, setCache } from '../utils/dataCache';
 import { formatCurrency, formatDateTime, generateId, getTodayDate } from '../utils/helpers';
 import Toggle from '../components/shared/Toggle';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
@@ -235,11 +236,21 @@ export default function Payments() {
   // Load reference data
   // ---------------------------------------------------------------------------
 
-  const loadCustomers = useCallback(async () => {
+  const loadCustomers = useCallback(async (forceRefresh = false) => {
+    if (!forceRefresh) {
+      const cached = getCached('customers');
+      if (cached) {
+        setCustomers(cached);
+        setCustomersLoading(false);
+        return;
+      }
+    }
     setCustomersLoading(true);
     try {
       const data = await api.getCustomers();
-      setCustomers(data.customers || []);
+      const customerList = data.customers || [];
+      setCache('customers', customerList);
+      setCustomers(customerList);
     } catch (err) {
       console.error('Failed to load customers:', err);
     } finally {

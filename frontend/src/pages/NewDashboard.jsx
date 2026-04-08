@@ -103,16 +103,28 @@ export default function Dashboard() {
 
   // Data for overview stats
   const [stats, setStats] = useState({ drafts: 0, todayPOs: 0, todayAIReviews: 0 });
+  const [aiStatus, setAiStatus] = useState(null);
 
   const fetchStats = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [draftsRes, historyRes, healthRes] = await Promise.all([
+      const [draftsRes, historyRes, healthRes, settingsRes] = await Promise.all([
         api.getPoDrafts().catch(() => ({ drafts: [] })),
         api.getPoHistory().catch(() => ({ history: [] })),
         api.getHealth().catch(() => null),
+        api.getSettings().catch(() => null),
       ]);
+
+      // AI status from settings
+      if (settingsRes?.settings?.ai) {
+        const ai = settingsRes.settings.ai;
+        setAiStatus({
+          enabled: ai.enabled !== false,
+          ollamaEnabled: ai.ollama_enabled !== false,
+          provider: ai.preferred_provider || 'auto',
+        });
+      }
       const drafts = Array.isArray(draftsRes.drafts) ? draftsRes.drafts : [];
       const history = Array.isArray(historyRes.history) ? historyRes.history : [];
       const todayHistory = history.filter((h) => isToday(h.createdAt || h.timestamp));
@@ -245,7 +257,7 @@ export default function Dashboard() {
     
     switch (activeSection) {
       case 'overview':
-        return <OverviewSection stats={stats} systemOk={systemOk} loading={loading} onRefresh={fetchStats} onClose={() => setActiveSection(null)} onNavigate={setActiveSection} />;
+        return <OverviewSection stats={stats} systemOk={systemOk} aiStatus={aiStatus} loading={loading} onRefresh={fetchStats} onClose={() => setActiveSection(null)} onNavigate={setActiveSection} />;
       case 'create-po':
         return <CreatePOSection onClose={() => setActiveSection(null)} />;
       case 'drafts':
@@ -516,7 +528,7 @@ function HelpButton() {
 // --------------------------------------------------------------------------
 // Overview Section
 // --------------------------------------------------------------------------
-function OverviewSection({ stats, systemOk, loading, onRefresh, onClose, onNavigate }) {
+function OverviewSection({ stats, systemOk, aiStatus, loading, onRefresh, onClose, onNavigate }) {
   const [recentActivity, setRecentActivity] = useState([]);
 
   useEffect(() => {
@@ -524,6 +536,16 @@ function OverviewSection({ stats, systemOk, loading, onRefresh, onClose, onNavig
       .then((res) => setRecentActivity((res.history || []).slice(0, 10)))
       .catch(() => {});
   }, []);
+
+  // Build AI status label
+  const aiLabel = (() => {
+    if (!aiStatus) return null;
+    if (!aiStatus.enabled) return 'AI Disabled';
+    if (aiStatus.provider === 'claude-only') return 'Claude Only';
+    if (aiStatus.provider === 'ollama-only') return aiStatus.ollamaEnabled ? 'Ollama Only' : 'Ollama Only (Disabled!)';
+    // auto
+    return aiStatus.ollamaEnabled ? 'Ollama Enabled (Auto)' : 'Claude Fallback (Ollama Off)';
+  })();
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -561,6 +583,28 @@ function OverviewSection({ stats, systemOk, loading, onRefresh, onClose, onNavig
           </div>
         </div>
       </div>
+
+      {/* AI Provider Status */}
+      {aiLabel && (
+        <div className="bg-white rounded-xl shadow-sm px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Brain className="h-5 w-5 text-purple-500" />
+            <span className="text-sm font-medium text-atd-dark">AI Provider</span>
+          </div>
+          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${
+            !aiStatus.enabled
+              ? 'bg-gray-100 text-gray-500'
+              : aiStatus.ollamaEnabled
+                ? 'bg-purple-100 text-purple-700'
+                : 'bg-blue-100 text-blue-700'
+          }`}>
+            <span className={`inline-block h-2 w-2 rounded-full ${
+              !aiStatus.enabled ? 'bg-gray-400' : 'bg-green-500'
+            }`} />
+            {aiLabel}
+          </span>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm">
         <div className="px-6 py-4 border-b border-gray-100">

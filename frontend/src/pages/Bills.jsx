@@ -12,6 +12,7 @@ import {
   Search,
 } from 'lucide-react';
 import { api } from '../utils/api';
+import { getCached, setCache } from '../utils/dataCache';
 import { formatCurrency, formatDateTime, generateId, getTodayDate } from '../utils/helpers';
 import Toggle from '../components/shared/Toggle';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
@@ -1381,47 +1382,82 @@ export default function Bills({ initialTab }) {
     try {
       const res = await api.getItems();
       const itemList = res.items || res.data || res;
-      setItems(Array.isArray(itemList) ? itemList : []);
+      const parsed = Array.isArray(itemList) ? itemList : [];
+      setCache('items', parsed);
+      setItems(parsed);
     } catch {
       // silently fail, items will remain as they are
     }
   }
 
+  async function refreshData() {
+    setVendorsLoading(true);
+    try {
+      const [mappingsRes, vendorsRes, iRes] = await Promise.all([
+        api.getVendorMappings(),
+        api.getVendors(),
+        api.getItems(),
+      ]);
+      // Active vendors for dropdown (from mappings)
+      const allVendors = mappingsRes.mappings?.vendors || [];
+      const activeVendors = allVendors
+        .filter((v) => v.active)
+        .map((v) => ({ Id: v.qbo_id, DisplayName: v.qbo_name }));
+      setCache('vendors', activeVendors);
+      setCache('vendorMappings', mappingsRes);
+      setVendors(activeVendors);
+      // Full QBO vendor data
+      const qboVendorList = vendorsRes.vendors || vendorsRes.data?.vendors || [];
+      const parsedQboVendors = Array.isArray(qboVendorList) ? qboVendorList : [];
+      setCache('qboVendors', parsedQboVendors);
+      setQboVendors(parsedQboVendors);
+      // Items
+      const itemList = iRes.items || iRes.data || iRes;
+      const parsedItems = Array.isArray(itemList) ? itemList : [];
+      setCache('items', parsedItems);
+      setItems(parsedItems);
+    } catch (err) {
+      console.error('[Bills] Failed to load lists:', err);
+    } finally {
+      setVendorsLoading(false);
+    }
+  }
+
   useEffect(() => {
     async function loadLists() {
-      setVendorsLoading(true);
-      try {
-        const [mappingsRes, vendorsRes, iRes] = await Promise.all([
-          api.getVendorMappings(),
-          api.getVendors(),
-          api.getItems(),
-        ]);
-        // Active vendors for dropdown (from mappings)
-        const allVendors = mappingsRes.mappings?.vendors || [];
-        const activeVendors = allVendors
-          .filter((v) => v.active)
-          .map((v) => ({ Id: v.qbo_id, DisplayName: v.qbo_name }));
-        setVendors(activeVendors);
-        // Full QBO vendor data
-        const qboVendorList = vendorsRes.vendors || vendorsRes.data?.vendors || [];
-        setQboVendors(Array.isArray(qboVendorList) ? qboVendorList : []);
-        // Items
-        const itemList = iRes.items || iRes.data || iRes;
-        setItems(Array.isArray(itemList) ? itemList : []);
-      } catch (err) {
-        console.error('[Bills] Failed to load lists:', err);
-      } finally {
+      // Try cache first
+      const cachedVendors = getCached('vendors');
+      const cachedQboVendors = getCached('qboVendors');
+      const cachedItems = getCached('items');
+      if (cachedVendors && cachedQboVendors && cachedItems) {
+        setVendors(cachedVendors);
+        setQboVendors(cachedQboVendors);
+        setItems(cachedItems);
         setVendorsLoading(false);
+        return;
       }
+      // Fallback to API
+      await refreshData();
     }
     loadLists();
   }, []);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-atd-dark">Bills</h1>
-        <p className="text-gray-500 text-sm mt-1">Create, review, and manage vendor bills</p>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-atd-dark">Bills</h1>
+          <p className="text-gray-500 text-sm mt-1">Create, review, and manage vendor bills</p>
+        </div>
+        <button
+          onClick={refreshData}
+          disabled={vendorsLoading}
+          className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+          title="Refresh vendors & items from QuickBooks"
+        >
+          <RefreshCw className={`w-4 h-4 ${vendorsLoading ? 'animate-spin' : ''}`} />
+          Refresh Data
+        </button>
       </div>
 
       {/* Tab bar */}
