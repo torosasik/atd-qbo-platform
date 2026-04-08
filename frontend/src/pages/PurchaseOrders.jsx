@@ -39,17 +39,6 @@ function StatusBadge({ status }) {
   );
 }
 
-function formatDateTime(ts) {
-  if (!ts) return '-';
-  try {
-    const d = new Date(ts);
-    return d.toLocaleString('en-US', {
-      month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    });
-  } catch { return ts; }
-}
-
 const SHIP_TO_ADDRESS = 'American Tile Depot, 1440 S State College Blvd Ste 6G, Anaheim, CA 92806';
 
 const UNIT_OPTIONS = ['Sq Ft', 'Box', 'Piece', 'Each', 'Linear Ft', 'Pallet', 'Sheet', 'Case', 'Roll', 'Other'];
