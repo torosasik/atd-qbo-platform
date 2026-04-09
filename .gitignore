@@ -40,3 +40,9 @@ screenshots/
 **/secrets/
 functions/.runtimeconfig.json
 functions/.env
+
+# Google Apps Scripts (contain API tokens - never commit)
+ATD Orders - Master List for AI.js
+
+# Temporary/scratch files
+plans/G.js
