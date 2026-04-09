@@ -150,65 +150,9 @@ const BACKEND_DEFAULTS = {
   },
 };
 
-// Local UI default shape - prevents undefined crashes before fetch completes.
-// Keys match what the backend actually stores.
-const DEFAULT_SETTINGS = {
-  google_sheets: {
-    po_sheet_id: '1TJDsUcabGjC4kYmQAdVAH2CJACN5D9jrjnsUVlp1W9U',
-    po_sheet_tab: 'Sheet1',
-    header_row: 1,
-    data_start_row: 2,
-    po_column_mapping: {
-      status: 'A', date: 'B', time: 'C', lastOrderedOn: 'D', lastOrderNumber: 'E',
-      continuation: 'F', orderNumber: 'G', lineItem: 'H', customerName: 'I',
-      customerEmail: 'J', vendorName: 'K', sku: 'L', variantId: 'M',
-      itemDescription: 'N', aka: 'O', requiredSize: 'P', quantity: 'Q',
-      currentQty: 'R', unit: 'S', sqFt: 'T', pieces: 'U', overage: 'V',
-      unitPrice: 'W', cost: 'X', subtotal: 'Y', stateZipcode: 'Z',
-      shippingType: 'AA', shippingCost: 'AB', orderTotal: 'AC', orderTags: 'AD',
-      inventoryQty: 'AE', measuringUnit: 'AF', tilesPerBox: 'AG',
-      tileSizeCoverage: 'AH', boxAreaCoverage: 'AI',
-    },
-  },
-  ai: {
-    enabled: true,
-    auto_review: true,
-    min_confidence: 90,
-    max_tokens: 1024,
-    review_prompt: 'Review this purchase order for accuracy. Check vendor name, item descriptions, quantities, and unit prices. Flag any anomalies, duplicates, or unusual amounts.',
-    ollama_url: 'http://localhost:11434',
-    ollama_model: 'qwen3.5-coder-35b:latest',
-    claude_model: 'claude-sonnet-4-20250514',
-    ollama_enabled: true,
-    preferred_provider: 'auto',
-  },
-  qbo: {
-    environment: 'production',
-    realmId: '',
-    default_memo_template: '',
-    default_po_terms: '',
-  },
-  modules: {
-    purchase_order: { enabled: true, auto_approve: false, require_ai_review: false },
-    invoice: { enabled: false, auto_approve: false },
-    bill: { enabled: false, auto_approve: false },
-    payment: { enabled: false, auto_approve: false },
-  },
-  features: {
-    sheets_import: true,
-    ai_review: true,
-    ai_chat: true,
-    auto_approve: false,
-    purchase_orders: true,
-    invoices: true,
-    bills: true,
-    payments: true,
-    expenses: true,
-    vendor_management: true,
-    dashboard_analytics: true,
-    notifications: false,
-  },
-};
+// Use BACKEND_DEFAULTS as the single source of truth for UI defaults.
+// This prevents stale local defaults from overriding backend values.
+const DEFAULT_SETTINGS = BACKEND_DEFAULTS;
 
 function deepMerge(base, override) {
   if (!override) return base;
