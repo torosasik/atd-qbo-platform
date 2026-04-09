@@ -1,11 +1,26 @@
 'use strict';
 
+/**
+ * Google Sheets Connector — READ-ONLY
+ *
+ * IMPORTANT: This module must NEVER write to any Google Sheet.
+ * The master sheet (configured via po_sheet_id) is a shared data source.
+ * The OAuth scope is intentionally restricted to `spreadsheets.readonly`
+ * to enforce this at the API level. Do NOT change the scope or add
+ * any update/append/batchUpdate calls.
+ */
+
 const { google } = require('googleapis');
 const { logAction } = require('./logger');
 
-// Column letter (A-Z) to zero-based index
-function colLetterToIndex(letter) {
-  return letter.toUpperCase().charCodeAt(0) - 65;
+// Column letter (A, B, ..., Z, AA, AB, ..., AI) to zero-based index
+function colLetterToIndex(letters) {
+  const s = letters.toUpperCase();
+  let index = 0;
+  for (let i = 0; i < s.length; i++) {
+    index = index * 26 + (s.charCodeAt(i) - 64);
+  }
+  return index - 1; // zero-based
 }
 
 /**
@@ -33,7 +48,7 @@ async function getSheetsClient() {
 async function readSheetData(sheetId, tabName, columnMapping) {
   const sheets = await getSheetsClient();
 
-  const range = `${tabName}!A:Z`;
+  const range = `${tabName}!A:AI`;
   let response;
   try {
     response = await sheets.spreadsheets.values.get({
@@ -75,12 +90,13 @@ async function readSheetData(sheetId, tabName, columnMapping) {
 
 /**
  * Group parsed rows into PO objects. Each unique value of groupKeyColumn
- * becomes one PO. The first row in each group sets vendorName, date, and memo.
+ * becomes one PO. The first row in each group sets vendorName, customerName,
+ * date, and status.
  *
  * @param {Array<Object>} rows - Output of readSheetData.
- * @param {string} groupKeyColumn - The field name whose value groups rows into POs.
- * @returns {Array<Object>} Array of PO objects:
- *   { groupKey, vendorName, date, memo, lines: [{ description, quantity, unitPrice }] }
+ * @param {string} groupKeyColumn - The field name whose value groups rows
+ *   (typically 'orderNumber' from the master sheet).
+ * @returns {Array<Object>} Array of PO objects with lines.
  */
 function groupByPO(rows, groupKeyColumn) {
   const map = new Map();
@@ -92,9 +108,14 @@ function groupByPO(rows, groupKeyColumn) {
     if (!map.has(key)) {
       map.set(key, {
         groupKey: key,
+        orderNumber: row.orderNumber || key,
         vendorName: row.vendorName || '',
+        customerName: row.customerName || '',
+        customerEmail: row.customerEmail || '',
         date: row.date || '',
-        memo: row.memo || '',
+        status: row.status || '',
+        fulfillmentStatus: row.fulfillmentStatus || '',
+        orderTotal: parseFloat(row.orderTotal) || 0,
         lines: [],
       });
     }
@@ -105,9 +126,15 @@ function groupByPO(rows, groupKeyColumn) {
 
     po.lines.push({
       description: row.itemDescription || '',
+      lineItem: row.lineItem || '',
+      requiredSize: row.requiredSize || '',
       quantity,
+      unit: row.unit || '',
       unitPrice,
-      amount: Math.round(quantity * unitPrice * 100) / 100,
+      subtotal: parseFloat(row.subtotal) || Math.round(quantity * unitPrice * 100) / 100,
+      tilesPerBox: row.tilesPerBox || '',
+      tileSizeCoverage: row.tileSizeCoverage || '',
+      boxAreaCoverage: row.boxAreaCoverage || '',
     });
   }
 

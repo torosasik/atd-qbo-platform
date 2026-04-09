@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Save, RefreshCw, AlertCircle, CheckCircle, X, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
 import { api } from '../utils/api';
+import { invalidateFeatureCache } from '../utils/useFeatures';
 import Toggle from '../components/shared/Toggle';
 import Toast from '../components/shared/Toast';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
@@ -9,17 +10,48 @@ import InfoTooltip from '../components/shared/InfoTooltip';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-const COLUMNS = ['A','B','C','D','E','F','G','H','I','J','K','L','M',
-                  'N','O','P','Q','R','S','T','U','V','W','X','Y','Z'];
+const COLUMNS = [
+  'A','B','C','D','E','F','G','H','I','J','K','L','M',
+  'N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
+  'AA','AB','AC','AD','AE','AF','AG','AH','AI',
+];
 
 const COLUMN_MAPPING_FIELDS = [
-  { key: 'vendorName', label: 'Vendor Name' },
-  { key: 'itemDescription', label: 'Item Description' },
-  { key: 'quantity', label: 'Quantity' },
-  { key: 'unitPrice', label: 'Unit Price' },
+  { key: 'status', label: 'Status' },
   { key: 'date', label: 'Date' },
-  { key: 'memo', label: 'Memo' },
-  { key: 'poGroupKey', label: 'PO Group Key' },
+  { key: 'time', label: 'Time' },
+  { key: 'lastOrderedOn', label: 'Last Ordered On' },
+  { key: 'lastOrderNumber', label: 'Last Order #' },
+  { key: 'continuation', label: 'Continuation' },
+  { key: 'orderNumber', label: 'Order #' },
+  { key: 'lineItem', label: 'Line Item #' },
+  { key: 'customerName', label: 'Customer' },
+  { key: 'customerEmail', label: 'Email' },
+  { key: 'vendorName', label: 'Vendor' },
+  { key: 'sku', label: 'SKU' },
+  { key: 'variantId', label: 'Variant ID' },
+  { key: 'itemDescription', label: 'Item Name' },
+  { key: 'aka', label: 'AKA' },
+  { key: 'requiredSize', label: 'Required Size' },
+  { key: 'quantity', label: 'Qty' },
+  { key: 'currentQty', label: 'Current Qty' },
+  { key: 'unit', label: 'Unit' },
+  { key: 'sqFt', label: 'Sq. Ft.' },
+  { key: 'pieces', label: 'Pieces' },
+  { key: 'overage', label: 'Overage' },
+  { key: 'unitPrice', label: 'Price' },
+  { key: 'cost', label: 'Cost' },
+  { key: 'subtotal', label: 'Subtotal' },
+  { key: 'stateZipcode', label: 'State/Zipcode' },
+  { key: 'shippingType', label: 'Shipping Type' },
+  { key: 'shippingCost', label: 'Shipping Cost' },
+  { key: 'orderTotal', label: 'Order Total' },
+  { key: 'orderTags', label: 'Order Tags' },
+  { key: 'inventoryQty', label: 'Inventory Qty' },
+  { key: 'measuringUnit', label: 'Measuring Unit' },
+  { key: 'tilesPerBox', label: 'Tiles Per Box' },
+  { key: 'tileSizeCoverage', label: 'Tile Size / Coverage' },
+  { key: 'boxAreaCoverage', label: 'Box Area / Coverage' },
 ];
 
 const MODULE_ROWS = [
@@ -29,18 +61,41 @@ const MODULE_ROWS = [
   { key: 'payment', label: 'Payments', available: false },
 ];
 
+// Feature toggles with labels and descriptions
+const FEATURE_TOGGLES = [
+  { key: 'sheets_import',       label: 'Google Sheets Import',    description: 'Import orders from the Google Sheets master list into the platform', category: 'Data Sources' },
+  { key: 'ai_review',           label: 'AI Transaction Review',   description: 'Run AI validation on transactions before they are submitted to QuickBooks', category: 'AI & Automation' },
+  { key: 'ai_chat',             label: 'AI Chat Assistant',       description: 'Enable the interactive AI chat for support and data queries', category: 'AI & Automation' },
+  { key: 'auto_approve',        label: 'Auto-Approve',            description: 'Automatically push approved transactions to QuickBooks without manual review', category: 'AI & Automation' },
+  { key: 'purchase_orders',     label: 'Purchase Orders',         description: 'Create and manage purchase orders from sheets or web forms', category: 'Modules' },
+  { key: 'invoices',            label: 'Invoices',                description: 'Create and manage customer invoices', category: 'Modules' },
+  { key: 'bills',               label: 'Bills',                   description: 'Create and manage vendor bills', category: 'Modules' },
+  { key: 'payments',            label: 'Payments',                description: 'Create and manage bill payments', category: 'Modules' },
+  { key: 'expenses',            label: 'Expense Tracking',        description: 'Track and categorize expenses from QuickBooks', category: 'Modules' },
+  { key: 'vendor_management',   label: 'Vendor Management',       description: 'Vendor lookup, search, and cache management', category: 'Modules' },
+  { key: 'dashboard_analytics', label: 'Dashboard Analytics',     description: 'Show KPI cards and analytics charts on the dashboard', category: 'Interface' },
+  { key: 'notifications',       label: 'Notifications',           description: 'In-app notifications for important events (coming soon)', category: 'Interface', comingSoon: true },
+];
+
 // ---------------------------------------------------------------------------
 // Backend defaults - must match functions/core/settings.js DEFAULT_SETTINGS
 // ---------------------------------------------------------------------------
 const BACKEND_DEFAULTS = {
   google_sheets: {
-    po_sheet_id: '1CLycDpMsrD1KK5fBohSmExfVPKnTy0qOneUYc161BVE',
+    po_sheet_id: '1TJDsUcabGjC4kYmQAdVAH2CJACN5D9jrjnsUVlp1W9U',
     po_sheet_tab: 'Sheet1',
     header_row: 1,
     data_start_row: 2,
     po_column_mapping: {
-      vendorName: 'A', itemDescription: 'B', quantity: 'C',
-      unitPrice: 'D', date: 'E', memo: 'F', poGroupKey: 'G',
+      status: 'A', date: 'B', time: 'C', lastOrderedOn: 'D', lastOrderNumber: 'E',
+      continuation: 'F', orderNumber: 'G', lineItem: 'H', customerName: 'I',
+      customerEmail: 'J', vendorName: 'K', sku: 'L', variantId: 'M',
+      itemDescription: 'N', aka: 'O', requiredSize: 'P', quantity: 'Q',
+      currentQty: 'R', unit: 'S', sqFt: 'T', pieces: 'U', overage: 'V',
+      unitPrice: 'W', cost: 'X', subtotal: 'Y', stateZipcode: 'Z',
+      shippingType: 'AA', shippingCost: 'AB', orderTotal: 'AC', orderTags: 'AD',
+      inventoryQty: 'AE', measuringUnit: 'AF', tilesPerBox: 'AG',
+      tileSizeCoverage: 'AH', boxAreaCoverage: 'AI',
     },
     invoice_sheet_id: '',
     invoice_sheet_tab: 'Sheet1',
@@ -76,6 +131,20 @@ const BACKEND_DEFAULTS = {
     bill: { enabled: false, auto_approve: false },
     payment: { enabled: false, auto_approve: false },
   },
+  features: {
+    sheets_import: true,
+    ai_review: true,
+    ai_chat: true,
+    auto_approve: false,
+    purchase_orders: true,
+    invoices: true,
+    bills: true,
+    payments: true,
+    expenses: true,
+    vendor_management: true,
+    dashboard_analytics: true,
+    notifications: false,
+  },
   oauth: {
     redirect_uri: 'https://atd-qbo-platform.web.app/api/auth/callback',
   },
@@ -85,13 +154,20 @@ const BACKEND_DEFAULTS = {
 // Keys match what the backend actually stores.
 const DEFAULT_SETTINGS = {
   google_sheets: {
-    po_sheet_id: '1CLycDpMsrD1KK5fBohSmExfVPKnTy0qOneUYc161BVE',
+    po_sheet_id: '1TJDsUcabGjC4kYmQAdVAH2CJACN5D9jrjnsUVlp1W9U',
     po_sheet_tab: 'Sheet1',
     header_row: 1,
     data_start_row: 2,
     po_column_mapping: {
-      vendorName: 'A', itemDescription: 'B', quantity: 'C',
-      unitPrice: 'D', date: 'E', memo: 'F', poGroupKey: 'G',
+      status: 'A', date: 'B', time: 'C', lastOrderedOn: 'D', lastOrderNumber: 'E',
+      continuation: 'F', orderNumber: 'G', lineItem: 'H', customerName: 'I',
+      customerEmail: 'J', vendorName: 'K', sku: 'L', variantId: 'M',
+      itemDescription: 'N', aka: 'O', requiredSize: 'P', quantity: 'Q',
+      currentQty: 'R', unit: 'S', sqFt: 'T', pieces: 'U', overage: 'V',
+      unitPrice: 'W', cost: 'X', subtotal: 'Y', stateZipcode: 'Z',
+      shippingType: 'AA', shippingCost: 'AB', orderTotal: 'AC', orderTags: 'AD',
+      inventoryQty: 'AE', measuringUnit: 'AF', tilesPerBox: 'AG',
+      tileSizeCoverage: 'AH', boxAreaCoverage: 'AI',
     },
   },
   ai: {
@@ -117,6 +193,20 @@ const DEFAULT_SETTINGS = {
     invoice: { enabled: false, auto_approve: false },
     bill: { enabled: false, auto_approve: false },
     payment: { enabled: false, auto_approve: false },
+  },
+  features: {
+    sheets_import: true,
+    ai_review: true,
+    ai_chat: true,
+    auto_approve: false,
+    purchase_orders: true,
+    invoices: true,
+    bills: true,
+    payments: true,
+    expenses: true,
+    vendor_management: true,
+    dashboard_analytics: true,
+    notifications: false,
   },
 };
 
@@ -263,6 +353,10 @@ export default function Settings() {
       // Snapshot current settings as "saved" baseline
       setSavedSettings(JSON.parse(JSON.stringify(settings)));
       showToast('Settings saved.', 'success');
+      // If features were saved, invalidate the cache so sidebar updates instantly
+      if (sectionKey === 'features') {
+        invalidateFeatureCache();
+      }
     } catch (err) {
       showToast(err.message || 'Failed to save settings.', 'error');
     } finally {
@@ -341,6 +435,7 @@ export default function Settings() {
   const ai = settings.ai;
   const qbo = settings.qbo;
   const mods = settings.modules;
+  const feats = settings.features || {};
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
@@ -364,6 +459,72 @@ export default function Settings() {
           {loadError} Showing default values.
         </div>
       )}
+
+      {/* Section 0: Feature Toggles */}
+      <SectionCard
+        title="Feature Toggles"
+        onSave={() => saveSection('features', { features: feats })}
+        saving={saving.features}
+      >
+        <p className="text-sm text-gray-500 -mt-2 mb-4">
+          Enable or disable individual features. Changes apply immediately after saving — no restart required.
+        </p>
+        {['Data Sources', 'AI & Automation', 'Modules', 'Interface'].map((category) => {
+          const items = FEATURE_TOGGLES.filter((f) => f.category === category);
+          if (items.length === 0) return null;
+          return (
+            <div key={category} className="mb-5 last:mb-0">
+              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">{category}</h3>
+              <div className="space-y-3">
+                {items.map(({ key, label, description, comingSoon }) => {
+                  const enabled = feats[key] !== false;
+                  return (
+                    <div
+                      key={key}
+                      className={`flex items-start gap-4 p-3 rounded-lg border transition-colors ${
+                        enabled ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-100'
+                      } ${comingSoon ? 'opacity-50' : ''}`}
+                    >
+                      <div className="pt-0.5">
+                        <Toggle
+                          id={`feat-${key}`}
+                          checked={enabled}
+                          onChange={(v) => setNested(`features.${key}`, v)}
+                          disabled={!!comingSoon}
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`text-sm font-medium ${enabled ? 'text-atd-dark' : 'text-gray-400'}`}>
+                            {label}
+                          </span>
+                          {enabled ? (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                              ON
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                              OFF
+                            </span>
+                          )}
+                          {comingSoon && (
+                            <span className="text-xs bg-gray-200 text-gray-500 px-1.5 py-0.5 rounded">
+                              Coming Soon
+                            </span>
+                          )}
+                        </div>
+                        <p className={`text-xs mt-0.5 ${enabled ? 'text-gray-500' : 'text-gray-400'}`}>
+                          {description}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </SectionCard>
 
       {/* Section 1: Google Sheets */}
       <SectionCard

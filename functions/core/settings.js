@@ -6,18 +6,47 @@ const SETTINGS_DOC = 'settings/app_config';
 
 const DEFAULT_SETTINGS = {
   google_sheets: {
-    po_sheet_id: '1CLycDpMsrD1KK5fBohSmExfVPKnTy0qOneUYc161BVE',
+    po_sheet_id: '1TJDsUcabGjC4kYmQAdVAH2CJACN5D9jrjnsUVlp1W9U',
     po_sheet_tab: 'Sheet1',
     header_row: 1,
     data_start_row: 2,
+    // Master sheet: 35 columns (A–AI). Map all so users can toggle in Settings.
     po_column_mapping: {
-      vendorName: 'A',
-      itemDescription: 'B',
-      quantity: 'C',
-      unitPrice: 'D',
-      date: 'E',
-      memo: 'F',
-      poGroupKey: 'G',
+      status: 'A',
+      date: 'B',
+      time: 'C',
+      lastOrderedOn: 'D',
+      lastOrderNumber: 'E',
+      continuation: 'F',
+      orderNumber: 'G',
+      lineItem: 'H',
+      customerName: 'I',
+      customerEmail: 'J',
+      vendorName: 'K',
+      sku: 'L',
+      variantId: 'M',
+      itemDescription: 'N',
+      aka: 'O',
+      requiredSize: 'P',
+      quantity: 'Q',
+      currentQty: 'R',
+      unit: 'S',
+      sqFt: 'T',
+      pieces: 'U',
+      overage: 'V',
+      unitPrice: 'W',
+      cost: 'X',
+      subtotal: 'Y',
+      stateZipcode: 'Z',
+      shippingType: 'AA',
+      shippingCost: 'AB',
+      orderTotal: 'AC',
+      orderTags: 'AD',
+      inventoryQty: 'AE',
+      measuringUnit: 'AF',
+      tilesPerBox: 'AG',
+      tileSizeCoverage: 'AH',
+      boxAreaCoverage: 'AI',
     },
     invoice_sheet_id: '',
     invoice_sheet_tab: 'Sheet1',
@@ -57,6 +86,20 @@ const DEFAULT_SETTINGS = {
     invoice: { enabled: false, auto_approve: false },
     bill: { enabled: false, auto_approve: false },
     payment: { enabled: false, auto_approve: false },
+  },
+  features: {
+    sheets_import: true,           // Import orders from Google Sheets master list
+    ai_review: true,               // Run AI validation on transactions before QBO submission
+    ai_chat: true,                 // Interactive AI chat assistant
+    auto_approve: false,           // Automatically push approved transactions to QBO
+    purchase_orders: true,         // Purchase order management
+    invoices: true,                // Invoice management
+    bills: true,                   // Bill management
+    payments: true,                // Payment management
+    expenses: true,                // Expense tracking and categorization
+    vendor_management: true,       // Vendor lookup and cache management
+    dashboard_analytics: true,     // Dashboard KPIs and analytics charts
+    notifications: false,          // In-app notifications (coming soon)
   },
   oauth: {
     redirect_uri: 'https://atd-qbo-platform.web.app/api/auth/callback',

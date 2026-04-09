@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
+import useFeatures from '../../utils/useFeatures';
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'v0.1.0';
 import {
@@ -19,24 +20,33 @@ import {
   Tags,
 } from 'lucide-react';
 
+// Each item can optionally have a `featureKey` — if present, the link is
+// only shown when that feature is enabled. Items without `featureKey` are
+// always visible (core platform pages).
 const mainNavItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart },
-  { to: '/invoices', label: 'Invoices', icon: FileText },
-  { to: '/bills', label: 'Bills', icon: Receipt },
-  { to: '/payments', label: 'Payments', icon: CreditCard },
-  { to: '/expenses', label: 'Expenses', icon: Wallet },
-  { to: '/ai-chat', label: 'AI Chat', icon: MessageSquare },
+  { to: '/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart, featureKey: 'purchase_orders' },
+  { to: '/invoices', label: 'Invoices', icon: FileText, featureKey: 'invoices' },
+  { to: '/bills', label: 'Bills', icon: Receipt, featureKey: 'bills' },
+  { to: '/payments', label: 'Payments', icon: CreditCard, featureKey: 'payments' },
+  { to: '/expenses', label: 'Expenses', icon: Wallet, featureKey: 'expenses' },
+  { to: '/ai-chat', label: 'AI Chat', icon: MessageSquare, featureKey: 'ai_chat' },
   { to: '/qbo-connect', label: 'QBO Connect', icon: Link2 },
   { to: '/settings', label: 'Settings', icon: Settings },
-  { to: '/vendor-management', label: 'Vendor Mapping', icon: Tags },
+  { to: '/vendor-management', label: 'Vendor Mapping', icon: Tags, featureKey: 'vendor_management' },
   { to: '/health', label: 'System Health', icon: Activity },
   { to: '/help', label: 'Help & Docs', icon: HelpCircle },
 ];
 
 const comingSoonItems = [];
 
-function SidebarContent({ onClose }) {
+function SidebarContent({ onClose, features = {} }) {
+  // Filter nav items based on feature flags
+  const visibleNavItems = mainNavItems.filter(({ featureKey }) => {
+    if (!featureKey) return true; // always show items without a feature key
+    return features[featureKey] !== false; // show unless explicitly disabled
+  });
+
   return (
     <div className="flex flex-col h-full">
       {/* Logo area */}
@@ -58,7 +68,7 @@ function SidebarContent({ onClose }) {
 
       {/* Main nav */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {mainNavItems.map(({ to, label, icon: Icon, end }) => (
+        {visibleNavItems.map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={to}
             to={to}
@@ -110,12 +120,13 @@ function SidebarContent({ onClose }) {
 
 export default function AppLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { features } = useFeatures();
 
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex lg:flex-col w-64 bg-atd-dark flex-shrink-0">
-        <SidebarContent />
+        <SidebarContent features={features} />
       </aside>
 
       {/* Mobile sidebar overlay */}
@@ -126,7 +137,7 @@ export default function AppLayout({ children }) {
             onClick={() => setSidebarOpen(false)}
           />
           <aside className="relative z-50 flex flex-col w-64 h-full bg-atd-dark shadow-xl">
-            <SidebarContent onClose={() => setSidebarOpen(false)} />
+            <SidebarContent onClose={() => setSidebarOpen(false)} features={features} />
           </aside>
         </div>
       )}

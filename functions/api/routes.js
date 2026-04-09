@@ -796,8 +796,8 @@ router.get('/sheets/preview', async (req, res) => {
     }
 
     const rows = await readSheetData(sheetId, tabName, columnMapping);
-    const poGroupKey = Object.keys(columnMapping).find((k) => k === 'poGroupKey') ? 'poGroupKey' : null;
-    const pos = poGroupKey ? groupByPO(rows, poGroupKey) : [];
+    const groupKey = Object.keys(columnMapping).find((k) => k === 'orderNumber') ? 'orderNumber' : null;
+    const pos = groupKey ? groupByPO(rows, groupKey) : [];
 
     res.status(200).json({ success: true, rows, pos });
   } catch (err) {
@@ -820,7 +820,7 @@ router.post('/sheets/import', async (req, res) => {
     }
 
     const rows = await readSheetData(sheetId, tabName, columnMapping);
-    const pos = groupByPO(rows, 'poGroupKey');
+    const pos = groupByPO(rows, 'orderNumber');
 
     if (pos.length === 0) {
       return res.status(200).json({ success: true, imported: 0, message: 'No PO groups found in sheet' });
