@@ -5,7 +5,21 @@ admin.initializeApp();
 
 const functions = require('firebase-functions');
 const express = require('express');
-const router = require('./api/routes');
+
+// Import individual route modules
+const poRoutes = require('./api/po-routes');
+const invoiceRoutes = require('./api/invoice-routes');
+const billRoutes = require('./api/bill-routes');
+const paymentRoutes = require('./api/payment-routes');
+const expenseRoutes = require('./api/expense-routes');
+const aiRoutes = require('./api/ai-routes');
+const cacheRoutes = require('./api/cache-routes');
+const settingsRoutes = require('./api/settings-routes');
+const sheetsRoutes = require('./api/sheets-routes');
+const authRoutes = require('./api/auth-routes');
+const vendorRoutes = require('./api/vendor-routes');
+const healthRoutes = require('./api/health-routes');
+
 const { logAction } = require('./core/logger');
 
 // ---------------------------------------------------------------------------
@@ -27,7 +41,24 @@ const ERROR_CODES = {
 
 const app = express();
 app.use(express.json());
-app.use('/api', router);
+
+// Create API router to ensure consistent /api prefix matching Vite proxy, frontend calls, and Firebase rewrite
+const apiRouter = express.Router();
+
+apiRouter.use('/po', poRoutes);
+apiRouter.use('/invoices', invoiceRoutes);
+apiRouter.use('/bills', billRoutes);
+apiRouter.use('/payments', paymentRoutes);
+apiRouter.use('/expenses', expenseRoutes);
+apiRouter.use('/ai', aiRoutes);
+apiRouter.use('/', cacheRoutes); // customers, vendors, items, accounts, open-invoices
+apiRouter.use('/', settingsRoutes); // settings
+apiRouter.use('/', sheetsRoutes); // sheets/test-connection, sheets/preview, sheets/import
+apiRouter.use('/auth', authRoutes);
+apiRouter.use('/vendor', vendorRoutes);
+apiRouter.use('/', healthRoutes); // health
+
+app.use('/api', apiRouter);
 
 // ---------------------------------------------------------------------------
 // Global error handler

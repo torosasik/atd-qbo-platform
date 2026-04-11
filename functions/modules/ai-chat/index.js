@@ -18,88 +18,90 @@ async function fetchContextData(needs) {
   const fetches = [];
 
   if (needs.includes('recent_pos')) {
-    fetches.push(
-      (async () => {
-        try {
-          const db = getFirestore();
-          // Pending drafts
-          const draftsSnap = await db
-            .collection('po_drafts')
-            .orderBy('createdAt', 'desc')
-            .limit(10)
-            .get();
-          const drafts = draftsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    fetches.push({
+      name: 'recent_pos',
+      promise: (async () => {
+        const db = getFirestore();
+        // Pending drafts
+        const draftsSnap = await db
+          .collection('po_drafts')
+          .orderBy('createdAt', 'desc')
+          .limit(10)
+          .get();
+        const drafts = draftsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
-          // Recently pushed POs from logs
-          const logsSnap = await db
-            .collection('logs')
-            .where('module', '==', 'purchase-order')
-            .where('action', '==', 'push-to-qbo')
-            .where('status', '==', 'success')
-            .orderBy('timestamp', 'desc')
-            .limit(5)
-            .get();
-          const pushed = logsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        // Recently pushed POs from logs
+        const logsSnap = await db
+          .collection('logs')
+          .where('module', '==', 'purchase-order')
+          .where('action', '==', 'push-to-qbo')
+          .where('status', '==', 'success')
+          .orderBy('timestamp', 'desc')
+          .limit(5)
+          .get();
+        const pushed = logsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 
-          data.recent_pos = [...drafts, ...pushed];
-        } catch (_err) {
-          data.recent_pos = [];
-        }
+        return [...drafts, ...pushed];
       })()
-    );
+    });
   }
 
   if (needs.includes('vendors')) {
-    fetches.push(
-      (async () => {
-        try {
-          const realmId = await getRealmId();
-          data.vendors = await getCachedVendors(realmId);
-        } catch (_err) {
-          data.vendors = [];
-        }
+    fetches.push({
+      name: 'vendors',
+      promise: (async () => {
+        const realmId = await getRealmId();
+        return await getCachedVendors(realmId);
       })()
-    );
+    });
   }
 
   if (needs.includes('items')) {
-    fetches.push(
-      (async () => {
-        try {
-          const realmId = await getRealmId();
-          data.items = await getCachedItems(realmId);
-        } catch (_err) {
-          data.items = [];
-        }
+    fetches.push({
+      name: 'items',
+      promise: (async () => {
+        const realmId = await getRealmId();
+        return await getCachedItems(realmId);
       })()
-    );
+    });
   }
 
   if (needs.includes('logs')) {
-    fetches.push(
-      (async () => {
-        try {
-          const db = getFirestore();
-          const snap = await db
-            .collection('logs')
-            .orderBy('timestamp', 'desc')
-            .limit(20)
-            .get();
-          data.logs = snap.docs.map((doc) => {
-            const d = doc.data();
-            return {
-              ...d,
-              timestamp: d.timestamp ? d.timestamp.toMillis() : null,
-            };
-          });
-        } catch (_err) {
-          data.logs = [];
-        }
+    fetches.push({
+      name: 'logs',
+      promise: (async () => {
+        const db = getFirestore();
+        const snap = await db
+          .collection('logs')
+          .orderBy('timestamp', 'desc')
+          .limit(20)
+          .get();
+        return snap.docs.map((doc) => {
+          const d = doc.data();
+          return {
+            ...d,
+            timestamp: d.timestamp ? d.timestamp.toMillis() : null,
+          };
+        });
       })()
-    );
+    });
   }
 
-  await Promise.all(fetches);
+  const results = await Promise.allSettled(fetches.map(f => f.promise));
+  for (let index = 0; index < fetches.length; index++) {
+    const fetch = fetches[index];
+    const result = results[index];
+    if (result.status === 'fulfilled') {
+      data[fetch.name] = result.value;
+    } else {
+      data[fetch.name] = [];
+      await logAction('ai-chat', 'fetch-context-data', 'warning', {
+        contextType: fetch.name,
+        error: result.reason?.message || 'Unknown error'
+      });
+    }
+  }
+
   return data;
 }
 

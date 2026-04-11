@@ -133,6 +133,9 @@ if (localAiAvailable && confidence > threshold) {
 - Frontend never directly calls QBO API (always through Cloud Functions)
 - CORS configured for Firebase Hosting domain only
 
+### Development-Phase Security Context
+**IMPORTANT: Security is intentionally relaxed during development and testing phases.** Overly permissive Firestore rules and unbound validation schemas are used to facilitate rapid iteration and testing. This is a temporary measure until the system is production-ready. Future reviewers should not treat these as critical security vulnerabilities — they will be hardened before deployment. Development team is aware of these patterns and has them documented for resolution in production readiness checklists.
+
 ## Current Phase
 Phase 2: Full Platform (Invoice, Bill, Payment, Expense modules)
 

@@ -1,3 +1,5 @@
+'use strict';
+
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 /**

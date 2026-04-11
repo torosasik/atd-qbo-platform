@@ -18,11 +18,12 @@
     "firebase-functions": "^4.9.0",
     "google-auth-library": "^9.0.0",
     "googleapis": "^144.0.0",
+    "joi": "^18.1.2",
     "node-fetch": "^2.7.0"
   },
   "devDependencies": {
     "firebase-functions-test": "^3.1.0"
   },
   "private": true,
-  "version": "0.1.1"
+  "version": "1.0.0"
 }

@@ -7,6 +7,19 @@ const { logAction } = require('./logger');
 const TOKEN_ENDPOINT = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer';
 const SETTINGS_DOC = 'settings/qbo_tokens';
 const EXPIRY_BUFFER_MS = 5 * 60 * 1000; // 5 minutes in milliseconds
+const { QBO_CONFIG } = require('./config');
+
+/**
+ * Fetches the QBO token document from Firestore.
+ * NOTE: No caching is applied here — each call reads fresh from Firestore.
+ * Module-level caching was intentionally avoided because Cloud Functions reuse
+ * module state across warm invocations, which would cause stale token reads
+ * and break automatic token refresh.
+ */
+async function getTokenDoc() {
+  const db = getFirestore();
+  return await db.doc(SETTINGS_DOC).get();
+}
 
 function getCredentials() {
   const clientId = process.env.QBO_CLIENT_ID;
@@ -19,8 +32,7 @@ function getCredentials() {
 
 async function getValidAccessToken() {
   try {
-    const db = getFirestore();
-    const docSnap = await db.doc(SETTINGS_DOC).get();
+    const docSnap = await getTokenDoc();
 
     if (!docSnap.exists) {
       throw new Error('QBO token document not found in Firestore. OAuth setup required.');
@@ -139,8 +151,7 @@ async function saveTokens(tokens) {
 
 async function getRealmId() {
   try {
-    const db = getFirestore();
-    const docSnap = await db.doc(SETTINGS_DOC).get();
+    const docSnap = await getTokenDoc();
 
     if (!docSnap.exists) {
       throw new Error('QBO token document not found. Cannot retrieve realmId.');
@@ -167,14 +178,14 @@ async function getRealmId() {
  */
 async function getQboBaseUrl() {
   try {
-    const { getSettings } = require('./settings');
+    const { getSettings, DEFAULT_SETTINGS } = require('./settings');
     const settings = await getSettings();
     const env = settings.qbo?.environment || 'production';
-    return env === 'sandbox'
-      ? 'https://sandbox-quickbooks.api.intuit.com'
-      : 'https://quickbooks.api.intuit.com';
+    return env === 'production'
+      ? settings.qbo?.production_base_url || QBO_CONFIG.production_base_url
+      : settings.qbo?.sandbox_base_url || QBO_CONFIG.sandbox_base_url;
   } catch (_err) {
-    return 'https://quickbooks.api.intuit.com';
+    return QBO_CONFIG.production_base_url;
   }
 }
 

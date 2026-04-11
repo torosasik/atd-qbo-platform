@@ -2,21 +2,9 @@
 
 const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const fetch = require('node-fetch');
-const { getValidAccessToken } = require('./qbo-auth');
+const { getValidAccessToken, getQboBaseUrl } = require('./qbo-auth');
 const { logAction } = require('./logger');
 const { getSettings, DEFAULT_SETTINGS } = require('./settings');
-
-async function getQboBaseUrl() {
-  try {
-    const settings = await getSettings();
-    const env = settings.qbo.environment;
-    return env === 'production'
-      ? settings.qbo.production_base_url
-      : settings.qbo.sandbox_base_url;
-  } catch (_err) {
-    return DEFAULT_SETTINGS.qbo.sandbox_base_url;
-  }
-}
 const CACHE_COLLECTION = 'cache';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 

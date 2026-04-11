@@ -6,7 +6,13 @@ Welcome to the team! This guide will get you up and running with the ATD QBO Pla
 
 ## Before You Begin
 
-Make sure you have the app URL. If you do not have it yet, ask Toros.
+1. Copy `functions/.env.example` to `functions/.env` and fill in your keys:
+   ```
+   QBO_CLIENT_ID=your_intuit_oauth_client_id
+   QBO_CLIENT_SECRET=your_intuit_oauth_client_secret
+   CLAUDE_API_KEY=your_anthropic_claude_api_key
+   ```
+2. Make sure you have the app URL. If you do not have it yet, ask Toros.
 
 ---
 

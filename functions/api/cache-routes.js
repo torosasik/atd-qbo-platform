@@ -1,0 +1,207 @@
+'use strict';
+
+const express = require('express');
+const { getCachedVendors, getCachedItems, getCachedCustomers, getCachedAccounts, fetchOpenInvoices, refreshItems, refreshVendors, refreshCustomers } = require('../core/cache');
+const { getRealmId, refreshAccessToken, getQboBaseUrl, getValidAccessToken, ensureValidToken } = require('../core/qbo-auth');
+const { getSettings } = require('../core/settings');
+const { logAction } = require('../core/logger');
+const { validateRequest, sendError, sendSuccess, retryOperation, schemas } = require('./middleware');
+
+const router = express.Router();
+
+// GET /open-invoices/:customerId
+router.get('/open-invoices/:customerId', async (req, res, next) => {
+  try {
+    await ensureValidToken();
+    const realmId = await getRealmId();
+    const { customerId } = req.params;
+
+    if (!customerId) {
+      const error = new Error('customerId is required');
+      error.status = 400;
+      return next(error);
+    }
+
+    const invoices = await fetchOpenInvoices(realmId, customerId);
+    sendSuccess(res, { invoices });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /customers
+router.get('/customers', async (req, res, next) => {
+  try {
+    await ensureValidToken();
+    const realmId = await getRealmId();
+    const customers = await getCachedCustomers(realmId);
+    sendSuccess(res, { customers });
+  } catch (err) {
+    if (err.code === 'QBO_AUTH_EXPIRED') {
+      const error = new Error('QuickBooks connection is not available');
+      error.code = err.code;
+      error.status = 200;
+      error.fix = 'Go to QBO Connect page and click Connect to QuickBooks';
+      return next(error);
+    }
+    next(err);
+  }
+});
+
+// GET /vendors
+router.get('/vendors', async (req, res, next) => {
+  try {
+    await ensureValidToken();
+    const realmId = await getRealmId();
+    const vendors = await getCachedVendors(realmId);
+    sendSuccess(res, { vendors });
+  } catch (err) {
+    if (err.code === 'QBO_AUTH_EXPIRED') {
+      const error = new Error('QuickBooks connection is not available');
+      error.code = err.code;
+      error.status = 200;
+      error.fix = 'Go to QBO Connect page and click Connect to QuickBooks';
+      return next(error);
+    }
+    next(err);
+  }
+});
+
+// GET /items
+router.get('/items', async (req, res, next) => {
+  try {
+    await ensureValidToken();
+    const realmId = await getRealmId();
+    const items = await getCachedItems(realmId);
+    sendSuccess(res, { items });
+  } catch (err) {
+    if (err.code === 'QBO_AUTH_EXPIRED') {
+      const error = new Error('QuickBooks connection is not available');
+      error.code = err.code;
+      error.status = 200;
+      error.fix = 'Go to QBO Connect page and click Connect to QuickBooks';
+      return next(error);
+    }
+    next(err);
+  }
+});
+
+// POST /items/create
+router.post('/items/create', validateRequest(schemas.itemCreate), async (req, res, next) => {
+  try {
+    await ensureValidToken();
+    const realmId = await getRealmId();
+    const { name, type, description, unitPrice } = req.body;
+
+    if (!name || !name.trim()) {
+      const error = new Error('Item name is required.');
+      error.status = 400;
+      return next(error);
+    }
+
+    const accessToken = await getValidAccessToken();
+    const qboBaseUrl = await getQboBaseUrl();
+
+    // Build the item payload for QBO
+    const itemPayload = {
+      Name: name.trim(),
+      Type: type || 'NonInventory',
+      Description: description || '',
+    };
+
+    // Add UnitPrice if provided
+    if (unitPrice !== undefined && unitPrice !== null && unitPrice !== '') {
+      itemPayload.UnitPrice = parseFloat(unitPrice);
+    }
+
+    // QBO requires account refs depending on item type:
+    //   NonInventory / Service → IncomeAccountRef + ExpenseAccountRef
+    //   Inventory               → IncomeAccountRef + AssetAccountRef + COGSAccountRef
+    const settings = await getSettings();
+    const incomeAcct  = settings.qbo.default_income_account  || '80';
+    const expenseAcct = settings.qbo.default_expense_account || '67';
+    const assetAcct   = settings.qbo.default_asset_account   || '81';
+    const cogsAcct    = settings.qbo.default_cogs_account    || '67';
+
+    if (type === 'Inventory') {
+      itemPayload.IncomeAccountRef = { value: incomeAcct };
+      itemPayload.AssetAccountRef  = { value: assetAcct };
+      itemPayload.COGSAccountRef   = { value: cogsAcct };
+      itemPayload.QtyOnHand = 0;
+    } else {
+      // NonInventory / Service items require both IncomeAccountRef and ExpenseAccountRef
+      itemPayload.IncomeAccountRef  = { value: incomeAcct };
+      itemPayload.ExpenseAccountRef = { value: expenseAcct };
+    }
+
+    const createUrl = `${qboBaseUrl}/v3/company/${realmId}/item`;
+    const createResponse = await fetch(createUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(itemPayload)
+    });
+
+    const createData = await createResponse.json();
+
+    if (!createResponse.ok) {
+      const intuitTid = createResponse.headers.get('intuit_tid');
+      await logAction('items', 'create-item', 'error', {
+        realmId,
+        name,
+        type,
+        error: createData.Fault?.Error?.[0]?.Detail || createData.message,
+        intuitTid
+      });
+      const error = new Error(createData.Fault?.Error?.[0]?.Detail || createData.message || 'Failed to create item in QuickBooks.');
+      error.status = 400;
+      return next(error);
+    }
+
+    // Refresh the items cache to include the new item
+    await refreshItems(realmId);
+
+    const newItem = createData.Item;
+    await logAction('items', 'create-item', 'success', {
+      realmId,
+      itemId: newItem.Id,
+      itemName: newItem.Name,
+      intuitTid: createResponse.headers.get('intuit_tid')
+    });
+
+    sendSuccess(res, { item: newItem }, `Item "${newItem.Name}" created successfully.`);
+  } catch (err) {
+    await logAction('items', 'create-item', 'error', { error: err.message });
+    next(err);
+  }
+});
+
+// GET /accounts
+router.get('/accounts', async (req, res, next) => {
+  try {
+    await ensureValidToken();
+    const realmId = await getRealmId();
+    const accounts = await getCachedAccounts(realmId);
+
+    const expenseAccounts = accounts
+      .filter((a) => {
+        const type = (a.AccountType || '').toLowerCase();
+        return type === 'expense' || type === 'cost of goods sold' || type === 'other expense';
+      })
+      .map((a) => ({
+        id: a.Id,
+        name: a.Name,
+        type: a.AccountType,
+        fullyQualifiedName: a.FullyQualifiedName || a.Name,
+      }));
+
+    sendSuccess(res, { accounts: expenseAccounts });
+  } catch (err) {
+    next(err);
+  }
+});
+
+module.exports = router;

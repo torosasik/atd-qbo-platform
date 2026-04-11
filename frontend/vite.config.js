@@ -8,6 +8,7 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:5001',
         changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, '/atd-qbo-platform/us-central1/api'),
       },
     },
   },

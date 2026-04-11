@@ -6,7 +6,7 @@ const SETTINGS_DOC = 'settings/app_config';
 
 const DEFAULT_SETTINGS = {
   google_sheets: {
-    po_sheet_id: '1TJDsUcabGjC4kYmQAdVAH2CJACN5D9jrjnsUVlp1W9U',
+    po_sheet_id: '',
     po_sheet_tab: 'Sheet1',
     header_row: 1,
     data_start_row: 2,
@@ -48,17 +48,6 @@ const DEFAULT_SETTINGS = {
       tileSizeCoverage: 'AH',
       boxAreaCoverage: 'AI',
     },
-    invoice_sheet_id: '',
-    invoice_sheet_tab: 'Sheet1',
-    invoice_column_mapping: {
-      customerName: 'A',
-      itemDescription: 'B',
-      quantity: 'C',
-      unitPrice: 'D',
-      date: 'E',
-      memo: 'F',
-      invoiceGroupKey: 'G',
-    },
   },
   ai: {
     enabled: true,
@@ -77,7 +66,10 @@ const DEFAULT_SETTINGS = {
     base_url: 'https://quickbooks.api.intuit.com',
     sandbox_base_url: 'https://sandbox-quickbooks.api.intuit.com',
     production_base_url: 'https://quickbooks.api.intuit.com',
+    default_income_account: '',
     default_expense_account: '',
+    default_cogs_account: '',
+    default_asset_account: '',
     default_memo_template: 'PO from ATD Platform - Order #{order_number}',
     default_po_terms: 'Net 30',
   },
@@ -86,6 +78,7 @@ const DEFAULT_SETTINGS = {
     invoice: { enabled: false, auto_approve: false },
     bill: { enabled: false, auto_approve: false },
     payment: { enabled: false, auto_approve: false },
+    expense: { enabled: true, auto_approve: false },
   },
   features: {
     sheets_import: true,           // Import orders from Google Sheets master list

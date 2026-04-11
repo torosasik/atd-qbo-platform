@@ -6,7 +6,14 @@ async function request(path, options = {}) {
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
   });
-  const data = await res.json();
+  let data;
+  try {
+    data = await res.json();
+  } catch (parseErr) {
+    // Capture raw response text for better debugging when JSON parse fails (e.g. HTML error page from proxy)
+    const rawText = await res.text().catch(() => 'Unable to read response body');
+    data = { error: `JSON parse failed: ${parseErr.message}`, raw: rawText };
+  }
   if (!res.ok) {
     const err = new Error(data.error || `Request failed: ${res.status}`);
     err.status = res.status;
@@ -53,7 +60,7 @@ export const api = {
   getPoHistory: () => api.get('/po/history'),
   createPo: (body) => api.post('/po/create', body),
   approveDraft: (draftId) => api.post(`/po/approve/${draftId}`, {}),
-  rejectDraft: (draftId) => api.del(`/po/drafts/${draftId}`),
+  rejectDraft: (draftId) => api.post(`/po/drafts/${draftId}/reject`, {}),
 
   // Invoices
   getCustomers: () => api.get('/customers'),
