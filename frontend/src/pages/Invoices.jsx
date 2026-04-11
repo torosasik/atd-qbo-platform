@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Plus,
   X,
@@ -447,6 +448,8 @@ function CreateTab({ customers, items, customersLoading, onSwitchToHistory, onRe
     customerName: '',
     customerEmail: '',
     txnDate: getTodayDate(),
+    dueDate: getTodayDate(),
+    paymentTerms: 'Net 30',
     memo: '',
     customerMessage: '',
     invoiceNumber: '',
@@ -462,12 +465,20 @@ function CreateTab({ customers, items, customersLoading, onSwitchToHistory, onRe
   const [createItemSearchTerm, setCreateItemSearchTerm] = useState('');
   const [showAutoApproveConfirm, setShowAutoApproveConfirm] = useState(false);
 
+  function handleClearForm() {
+    if (!window.confirm('Clear this form and reset all fields to defaults?')) return;
+    resetForm();
+    setResult(null);
+  }
+
   function resetForm() {
     setForm({
       customerId: '',
       customerName: '',
       customerEmail: '',
       txnDate: getTodayDate(),
+      dueDate: getTodayDate(),
+      paymentTerms: 'Net 30',
       memo: '',
       customerMessage: '',
       invoiceNumber: '',
@@ -580,6 +591,8 @@ function CreateTab({ customers, items, customersLoading, onSwitchToHistory, onRe
         customerId: form.customerId,
         customerName: form.customerName,
         date: form.txnDate,
+        dueDate: form.dueDate,
+        paymentTerms: form.paymentTerms,
         memo: form.memo,
         customerMessage: form.customerMessage,
         lines: validLines.map((l) => ({
@@ -664,7 +677,11 @@ function CreateTab({ customers, items, customersLoading, onSwitchToHistory, onRe
           </label>
           {!customersLoading && customers.length === 0 ? (
             <p className="text-sm text-yellow-600 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
-              No customers found in QuickBooks. Make sure you have customers set up.
+              No customers configured. Go to{' '}
+              <Link to="/settings" className="font-medium underline hover:text-yellow-700">
+                Customer Management
+              </Link>{' '}
+              to sync.
             </p>
           ) : (
           <div className="relative" ref={customerDropdownRef}>
@@ -762,6 +779,29 @@ function CreateTab({ customers, items, customersLoading, onSwitchToHistory, onRe
               onChange={(e) => setForm((f) => ({ ...f, txnDate: e.target.value }))}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
+            <input
+              type="date"
+              value={form.dueDate}
+              onChange={(e) => setField('dueDate', e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Terms</label>
+            <select
+              value={form.paymentTerms}
+              onChange={(e) => setField('paymentTerms', e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
+            >
+              <option value="Due on Receipt">Due on Receipt</option>
+              <option value="Net 15">Net 15</option>
+              <option value="Net 30">Net 30</option>
+              <option value="Net 45">Net 45</option>
+              <option value="Net 60">Net 60</option>
+            </select>
           </div>
         </div>
 
@@ -937,6 +977,15 @@ function CreateTab({ customers, items, customersLoading, onSwitchToHistory, onRe
         </div>
 
         <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={() => { setField('autoApprove', false); handleSubmit({ preventDefault: () => {} }); }}
+            className="flex items-center gap-2 bg-blue-100 hover:bg-blue-200 text-blue-700 px-6 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {submitting && <LoadingSpinner size="sm" color="blue" />}
+            Save as Draft
+          </button>
           {!form.autoApprove ? (
             <button
               type="submit"
@@ -957,6 +1006,14 @@ function CreateTab({ customers, items, customersLoading, onSwitchToHistory, onRe
               Auto Approve and Submit
             </button>
           )}
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={handleClearForm}
+            className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            Clear Form
+          </button>
         </div>
       </div>
 

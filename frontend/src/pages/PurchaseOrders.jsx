@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Plus,
   X,
@@ -350,6 +351,17 @@ function CreateNewItemModal({ isOpen, onClose, onSuccess, initialName }) {
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleSaveAsDraft() {
+    setField('autoApprove', false);
+    handleSubmit({ preventDefault: () => {} });
+  }
+
+  function handleClearForm() {
+    if (!window.confirm('Clear this form and reset all fields to defaults?')) return;
+    resetForm();
+    setResult(null);
   }
 
   if (!isOpen) return null;
@@ -715,7 +727,11 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
           </label>
           {!vendorsLoading && vendors.length === 0 ? (
             <p className="text-sm text-yellow-600 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
-              No vendors configured. Go to Vendor Management to sync.
+              No vendors configured. Go to{' '}
+              <Link to="/vendor-management" className="font-medium underline hover:text-yellow-700">
+                Vendor Management
+              </Link>{' '}
+              to sync.
             </p>
           ) : (
           <div className="relative" ref={vendorDropdownRef}>
@@ -991,6 +1007,15 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
         </div>
 
         <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={handleSaveAsDraft}
+            className="flex items-center gap-2 bg-blue-100 hover:bg-blue-200 text-blue-700 px-6 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {submitting && <LoadingSpinner size="sm" color="blue" />}
+            Save as Draft
+          </button>
           {!form.autoApprove ? (
             <button
               type="submit"
@@ -1011,6 +1036,14 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
                   Auto Approve and Submit
                 </button>
           )}
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={handleClearForm}
+            className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            Clear Form
+          </button>
         </div>
       </div>
 

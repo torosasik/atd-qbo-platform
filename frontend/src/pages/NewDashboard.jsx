@@ -63,12 +63,25 @@ function isToday(ts) {
 // --------------------------------------------------------------------------
 // Dashboard Feature Box Component
 // --------------------------------------------------------------------------
-function DashboardBox({ icon: Icon, title, description, count, onClick, loading, accentColor = 'bg-atd-blue' }) {
+function DashboardBox({ icon: Icon, title, description, count, onClick, loading, accentColor = 'bg-atd-blue', disabled = false, badge = null }) {
   return (
     <button
       onClick={onClick}
-      className="bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md hover:border-atd-blue/30 transition-all text-left group"
+      disabled={disabled}
+      className={`relative bg-white rounded-xl shadow-sm border text-left group transition-all ${
+        disabled
+          ? 'border-gray-200 opacity-80 cursor-not-allowed'
+          : 'border-gray-100 hover:shadow-md hover:border-atd-blue/30'
+      }`}
     >
+      {disabled && (
+        <div className="absolute inset-0 bg-white/55 flex items-center justify-center rounded-xl z-10">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gray-900 text-white text-xs font-semibold shadow-sm">
+            <Lock className="h-3.5 w-3.5" />
+            {badge || 'Coming Soon'}
+          </div>
+        </div>
+      )}
       <div className="p-6">
         <div className="flex items-start justify-between mb-4">
           <div className={`p-3 rounded-xl ${accentColor}`}>
@@ -224,6 +237,7 @@ export default function Dashboard() {
       description: 'Create invoices with AI review.',
       accentColor: 'bg-emerald-600',
       route: '/invoices',
+      comingSoon: true,
     },
     {
       id: 'bills',
@@ -232,6 +246,7 @@ export default function Dashboard() {
       description: 'Manage vendor bills.',
       accentColor: 'bg-amber-600',
       route: '/bills',
+      comingSoon: true,
     },
     {
       id: 'payments',
@@ -240,6 +255,7 @@ export default function Dashboard() {
       description: 'Apply payments to invoices.',
       accentColor: 'bg-cyan-600',
       route: '/payments',
+      comingSoon: true,
     },
     {
       id: 'expenses',
@@ -248,6 +264,7 @@ export default function Dashboard() {
       description: 'AI-powered expense categorization.',
       accentColor: 'bg-rose-600',
       route: '/expenses',
+      comingSoon: true,
     },
   ];
 
@@ -358,7 +375,16 @@ export default function Dashboard() {
                   description={box.description}
                   loading={loading}
                   accentColor={box.accentColor}
-                  onClick={() => box.route ? navigate(box.route) : setActiveSection(box.id)}
+                  disabled={Boolean(box.comingSoon)}
+                  badge={box.comingSoon ? 'Coming Soon' : null}
+                  onClick={() => {
+                    if (box.comingSoon) return;
+                    if (box.route) {
+                      navigate(box.route);
+                      return;
+                    }
+                    setActiveSection(box.id);
+                  }}
                 />
               ))}
             </div>

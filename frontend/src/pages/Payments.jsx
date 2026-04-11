@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Plus,
   X,
@@ -364,6 +365,24 @@ export default function Payments() {
   const parsedTotalAmount = parseFloat(totalAmount) || 0;
   const unappliedAmount = Math.round((parsedTotalAmount - appliedTotal) * 100) / 100;
 
+  const resetForm = () => {
+    setCustomerId('');
+    setCustomerName('');
+    setTotalAmount('');
+    setPaymentMethod('');
+    setReferenceNumber('');
+    setMemo('');
+    setTxnDate(getTodayDate());
+    setSelectedInvoices({});
+    setOpenInvoices([]);
+  };
+
+  const handleClearForm = () => {
+    if (!window.confirm('Clear this form and reset all fields to defaults?')) return;
+    resetForm();
+    setSubmitResult(null);
+  };
+
   // ---------------------------------------------------------------------------
   // Submit payment
   // ---------------------------------------------------------------------------
@@ -410,15 +429,7 @@ export default function Payments() {
         setSubmitResult({ type: 'success', message: msg, data: result });
 
         // Reset form on success
-        setCustomerId('');
-        setCustomerName('');
-        setTotalAmount('');
-        setPaymentMethod('');
-        setReferenceNumber('');
-        setMemo('');
-        setTxnDate(getTodayDate());
-        setSelectedInvoices({});
-        setOpenInvoices([]);
+        resetForm();
       } else {
         setSubmitResult({
           type: 'error',
@@ -577,6 +588,15 @@ export default function Payments() {
               {/* Customer */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
+                {!customersLoading && customers.length === 0 && (
+                  <p className="mb-2 text-sm text-yellow-600 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
+                    No customers configured. Go to{' '}
+                    <Link to="/settings" className="font-medium underline hover:text-yellow-700">
+                      Customer Management
+                    </Link>{' '}
+                    to sync.
+                  </p>
+                )}
                 <CustomerCombobox
                   customers={customers}
                   value={customerId}
@@ -830,23 +850,33 @@ export default function Payments() {
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={submitting || !customerId || !totalAmount}
-              className="w-full sm:w-auto px-6 py-3 bg-atd-blue text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {submitting ? (
-                <>
-                  <LoadingSpinner size="sm" color="white" />
-                  Processing…
-                </>
-              ) : (
-                <>
-                  <DollarSign className="h-4 w-4" />
-                  {autoApprove ? 'Create Payment' : 'Submit for Review'}
-                </>
-              )}
-            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={handleClearForm}
+                className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-6 py-3 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Clear Form
+              </button>
+              <button
+                type="submit"
+                disabled={submitting || !customerId || !totalAmount}
+                className="w-full sm:w-auto px-6 py-3 bg-atd-blue text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {submitting ? (
+                  <>
+                    <LoadingSpinner size="sm" color="white" />
+                    Processing…
+                  </>
+                ) : (
+                  <>
+                    <DollarSign className="h-4 w-4" />
+                    {autoApprove ? 'Create Payment' : 'Submit for Review'}
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </form>
       )}
