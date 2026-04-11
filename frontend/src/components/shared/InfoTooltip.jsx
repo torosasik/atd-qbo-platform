@@ -10,6 +10,11 @@ import { HelpCircle } from 'lucide-react';
  */
 export default function InfoTooltip({ text }) {
   const [isVisible, setIsVisible] = useState(false);
+  const tooltipId = `tooltip-${(text || 'info')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40)}`;
 
   return (
     <span 
@@ -22,7 +27,9 @@ export default function InfoTooltip({ text }) {
       <button
         type="button"
         className="inline-flex items-center justify-center h-4 w-4 text-gray-400 hover:text-atd-blue cursor-help transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-atd-blue focus-visible:ring-offset-1 rounded"
-        aria-describedby="tooltip-description"
+        aria-describedby={tooltipId}
+        aria-label={text || 'More information'}
+        title={text || 'More information'}
         tabIndex={0}
       >
         <span className="sr-only">More information</span>
@@ -31,7 +38,7 @@ export default function InfoTooltip({ text }) {
       
       {/* Tooltip bubble - uses role="tooltip" for screen readers */}
       <span
-        id="tooltip-description"
+        id={tooltipId}
         role="tooltip"
         className={[
           'absolute bottom-full left-1/2 -translate-x-1/2 mb-2',

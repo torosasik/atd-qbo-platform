@@ -153,6 +153,7 @@ const BACKEND_DEFAULTS = {
 // Use BACKEND_DEFAULTS as the single source of truth for UI defaults.
 // This prevents stale local defaults from overriding backend values.
 const DEFAULT_SETTINGS = BACKEND_DEFAULTS;
+const SETTINGS_CACHE_KEY = 'atd.settings.cache.v1';
 
 function deepMerge(base, override) {
   if (!override) return base;
@@ -241,6 +242,7 @@ export default function Settings() {
   const [sheetPreview, setSheetPreview] = useState({ data: null, open: false, loading: false, error: null });
   const [resetConfirm, setResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [aiTest, setAiTest] = useState({ status: null, loading: false, message: '' });
 
   const isDirty = savedSettings !== null && JSON.stringify(settings) !== JSON.stringify(savedSettings);
 
@@ -267,8 +269,28 @@ export default function Settings() {
         const merged = deepMerge(DEFAULT_SETTINGS, data);
         setSettings(merged);
         setSavedSettings(JSON.parse(JSON.stringify(merged)));
+        localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(merged));
       } catch (err) {
-        setLoadError(err.message || 'Failed to load settings.');
+        let fallbackSettings = DEFAULT_SETTINGS;
+        let usedCache = false;
+        try {
+          const cached = localStorage.getItem(SETTINGS_CACHE_KEY);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            fallbackSettings = deepMerge(DEFAULT_SETTINGS, parsed);
+            usedCache = true;
+          }
+        } catch {
+          fallbackSettings = DEFAULT_SETTINGS;
+        }
+
+        setSettings(fallbackSettings);
+        setSavedSettings(JSON.parse(JSON.stringify(fallbackSettings)));
+        setLoadError(
+          usedCache
+            ? 'Could not load saved settings from server. Showing locally cached values.'
+            : (err.message || 'Could not load saved settings from server. Showing defaults.')
+        );
       } finally {
         setPageLoading(false);
       }
@@ -296,6 +318,7 @@ export default function Settings() {
       await api.updateSettings(payload);
       // Snapshot current settings as "saved" baseline
       setSavedSettings(JSON.parse(JSON.stringify(settings)));
+      localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(settings));
       showToast('Settings saved.', 'success');
       // If features were saved, invalidate the cache so sidebar updates instantly
       if (sectionKey === 'features') {
@@ -315,6 +338,7 @@ export default function Settings() {
       const resetMerged = deepMerge(DEFAULT_SETTINGS, BACKEND_DEFAULTS);
       setSettings(resetMerged);
       setSavedSettings(JSON.parse(JSON.stringify(resetMerged)));
+      localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(resetMerged));
       setResetConfirm(false);
       showToast('Settings reset to defaults.', 'success');
     } catch (err) {
@@ -331,6 +355,16 @@ export default function Settings() {
       setSheetTest({ status: 'ok', loading: false, message: 'Connection successful.' });
     } catch (err) {
       setSheetTest({ status: 'error', loading: false, message: err.message || 'Connection failed.' });
+    }
+  }
+
+  async function handleTestAiConnection() {
+    setAiTest({ status: null, loading: true, message: '' });
+    try {
+      await api.testAiConnection(ai?.preferred_provider || 'auto');
+      setAiTest({ status: 'ok', loading: false, message: 'AI connection successful.' });
+    } catch (err) {
+      setAiTest({ status: 'error', loading: false, message: err.message || 'AI connection failed.' });
     }
   }
 
@@ -400,7 +434,7 @@ export default function Settings() {
       {loadError && (
         <div className="flex items-center gap-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-lg px-4 py-3 text-sm">
           <AlertCircle className="h-5 w-5 flex-shrink-0" />
-          {loadError} Showing default values.
+          {loadError}
         </div>
       )}
 
@@ -496,6 +530,12 @@ export default function Settings() {
             placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
           />
         </FieldRow>
+        {qbo.environment === 'production' && (
+          <div className="flex items-center gap-3 bg-red-50 border border-red-300 text-red-800 rounded-lg px-4 py-3 text-sm">
+            <AlertCircle className="h-5 w-5 flex-shrink-0" />
+            WARNING: Production mode affects real QuickBooks data. Switch to Sandbox for testing.
+          </div>
+        )}
         <FieldRow
           label="Tab Name"
           tooltip="The name of the tab within the spreadsheet that contains PO data. Defaults to Sheet1."
@@ -789,6 +829,26 @@ export default function Settings() {
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue resize-y"
           />
         </FieldRow>
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          <button
+            onClick={handleTestAiConnection}
+            disabled={aiTest.loading}
+            className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+          >
+            {aiTest.loading ? <LoadingSpinner size="sm" color="gray" /> : null}
+            Test AI Connection
+          </button>
+          {aiTest.status === 'ok' && (
+            <span className="flex items-center gap-1.5 text-green-600 text-sm">
+              <CheckCircle className="h-4 w-4" /> {aiTest.message}
+            </span>
+          )}
+          {aiTest.status === 'error' && (
+            <span className="flex items-center gap-1.5 text-red-600 text-sm">
+              <X className="h-4 w-4" /> {aiTest.message}
+            </span>
+          )}
+        </div>
       </SectionCard>
 
       {/* Section 3: QBO Connection */}

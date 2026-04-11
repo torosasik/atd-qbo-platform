@@ -28,6 +28,7 @@ const STATUS_CONFIG = {
   disconnected:   { color: 'bg-gray-400',   label: 'Disconnected',  textColor: 'text-gray-600',   bgColor: 'bg-gray-50',   borderColor: 'border-gray-200' },
   not_configured: { color: 'bg-gray-400',   label: 'Not Configured',textColor: 'text-gray-600',   bgColor: 'bg-gray-50',   borderColor: 'border-gray-200' },
   error:          { color: 'bg-red-500',    label: 'Error',         textColor: 'text-red-700',    bgColor: 'bg-red-50',    borderColor: 'border-red-200' },
+  unknown:        { color: 'bg-yellow-400', label: 'Unknown',       textColor: 'text-yellow-800', bgColor: 'bg-yellow-50', borderColor: 'border-yellow-200' },
 };
 
 function statusConfig(status) {
@@ -148,12 +149,32 @@ function StatusBanner({ status }) {
 // ---------------------------------------------------------------------------
 
 const SERVICE_META = [
-  { key: 'firestore',    name: 'Firestore Database', icon: Database },
-  { key: 'qbo_api',      name: 'QuickBooks Online',  icon: Link2    },
-  { key: 'ollama',       name: 'Ollama (Local AI)',   icon: Brain    },
-  { key: 'claude_api',   name: 'Claude API',          icon: Cloud    },
-  { key: 'google_sheets',name: 'Google Sheets',       icon: Sheet    },
+  { key: 'backend_api', name: 'Backend API', icon: Activity },
+  { key: 'qbo_api', name: 'QuickBooks Connection', icon: Link2 },
+  { key: 'ollama', name: 'AI Service (Ollama)', icon: Brain },
+  { key: 'claude_api', name: 'AI Service (Claude)', icon: Cloud },
+  { key: 'google_sheets', name: 'Google Sheets', icon: Sheet },
 ];
+
+function buildUnknownHealth() {
+  const unknownService = {
+    status: 'unknown',
+    message: 'Unknown (API unreachable)',
+  };
+
+  return {
+    status: 'degraded',
+    version: 'N/A',
+    errors: ['Health API unreachable'],
+    services: {
+      backend_api: unknownService,
+      qbo_api: unknownService,
+      ollama: unknownService,
+      claude_api: unknownService,
+      google_sheets: unknownService,
+    },
+  };
+}
 
 export default function HealthCheck() {
   const [health, setHealth] = useState(null);
@@ -167,11 +188,20 @@ export default function HealthCheck() {
     setLoadError(null);
     try {
       const data = await api.getHealth();
-      setHealth(data);
+      const normalized = {
+        ...data,
+        services: {
+          backend_api: data?.services?.backend_api || { status: 'connected', message: 'Backend API reachable' },
+          ...data?.services,
+        },
+      };
+      setHealth(normalized);
       setLastChecked(new Date());
       setLastRefreshed(new Date());
     } catch (err) {
       setLoadError(err.message || 'Failed to reach the health endpoint.');
+      setHealth(buildUnknownHealth());
+      setLastChecked(new Date());
     } finally {
       setLoading(false);
     }
@@ -231,7 +261,7 @@ export default function HealthCheck() {
       {loadError && !loading && (
         <div className="flex items-center gap-3 bg-red-50 border border-red-300 text-red-800 rounded-xl px-5 py-4 text-sm">
           <AlertCircle className="h-5 w-5 flex-shrink-0" />
-          <span className="flex-1">{loadError}</span>
+          <span className="flex-1">{loadError}. Showing fallback statuses as Unknown (API unreachable).</span>
           <button
             onClick={fetchHealth}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-red-300 bg-white text-red-700 hover:bg-red-100 transition-colors"
@@ -249,7 +279,7 @@ export default function HealthCheck() {
         </div>
       )}
 
-      {!loadError && health && (
+      {health && (
         <>
           {/* Overall status banner */}
           <StatusBanner status={health.status} />

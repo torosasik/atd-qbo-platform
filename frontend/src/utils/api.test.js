@@ -1,7 +1,15 @@
-import { describe, it, expect } from 'vitest';
-import { getErrorMessage } from './api';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { api, getErrorMessage } from './api';
 
 describe('api utilities', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   describe('getErrorMessage', () => {
     it('should return default message for null error', () => {
       const result = getErrorMessage(null);
@@ -87,6 +95,58 @@ describe('api utilities', () => {
       expect(result.message).toBe('Network error');
       expect(result.code).toBe('NETWORK_ERROR');
       expect(result.fix).toBe('Check your internet connection');
+    });
+  });
+
+  describe('api helper endpoints', () => {
+    it('should call disconnect endpoint for disconnectQBO', async () => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        json: async () => ({ ok: true }),
+      });
+
+      await api.disconnectQBO();
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/auth/disconnect',
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    it('should call company info endpoint', async () => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        json: async () => ({ CompanyInfo: { CompanyName: 'ATD' } }),
+      });
+
+      await api.getQboCompanyInfo();
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/qbo/company-info',
+        expect.objectContaining({
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    });
+
+    it('should send test payload for testAiConnection', async () => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        json: async () => ({ ok: true }),
+      });
+
+      await api.testAiConnection('claude-only');
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/ai/chat',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            message: 'Health check: respond with OK.',
+            context: { test: true, provider: 'claude-only' },
+          }),
+        })
+      );
     });
   });
 });

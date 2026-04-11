@@ -105,7 +105,15 @@ export const api = {
   getAuthStatus: () => api.get('/auth/status'),
   connectQBO: () => api.get('/auth/connect'),
   disconnectAuth: () => api.post('/auth/disconnect', {}),
+  disconnectQBO: () => api.post('/auth/disconnect', {}),
   refreshToken: () => api.post('/auth/refresh', {}),
+  getQboCompanyInfo: () => api.get('/qbo/company-info'),
+
+  // AI
+  testAiConnection: (provider = 'auto') => api.post('/ai/chat', {
+    message: 'Health check: respond with OK.',
+    context: { test: true, provider },
+  }),
 
   // Vendor Mappings
   syncVendorMappings: () => api.post('/vendor-mappings/sync', {}),

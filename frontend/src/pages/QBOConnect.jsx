@@ -75,6 +75,7 @@ export default function QBOConnect() {
   const [error, setError] = useState(null);
   const [actionLoading, setActionLoading] = useState(null); // 'disconnect' | 'refresh'
   const [toast, setToast] = useState(null);
+  const [connectionTest, setConnectionTest] = useState({ status: null, loading: false, message: '' });
   // Tick counter to force countdown re-render every 60s
   const [countdownTick, setCountdownTick] = useState(0);
 
@@ -150,6 +151,18 @@ export default function QBOConnect() {
       setToast({ message: err.message || 'Failed to refresh token.', type: 'error' });
     } finally {
       setActionLoading(null);
+    }
+  }
+
+  async function handleTestConnection() {
+    setConnectionTest({ status: null, loading: true, message: '' });
+    try {
+      const res = await api.getQboCompanyInfo();
+      const company = res?.data ?? res;
+      const companyName = company?.CompanyInfo?.CompanyName || company?.companyName || 'Company info retrieved';
+      setConnectionTest({ status: 'ok', loading: false, message: `Success: ${companyName}` });
+    } catch (err) {
+      setConnectionTest({ status: 'error', loading: false, message: err.message || 'Connection test failed.' });
     }
   }
 
@@ -242,6 +255,16 @@ export default function QBOConnect() {
         )}
       </div>
 
+      <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-4 text-sm text-blue-900 space-y-2">
+        <p className="font-semibold">Permissions requested during OAuth connect</p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>QuickBooks Online accounting company data access</li>
+          <li>Read and write access needed for invoices, bills, purchase orders, and payments</li>
+          <li>Offline access for secure refresh tokens</li>
+        </ul>
+        <p className="text-blue-800">After connecting, your token will auto-refresh. You can check token status on the Settings page.</p>
+      </div>
+
       {/* Token Expiry Countdown Banner */}
       {connected && !loading && expiryInfo && (
         <div className={`rounded-xl border p-4 ${expiryInfo.bgColor} shadow-sm`}>
@@ -293,6 +316,18 @@ export default function QBOConnect() {
           {connected && (
             <>
               <button
+                onClick={handleTestConnection}
+                disabled={connectionTest.loading}
+                className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+              >
+                {connectionTest.loading ? (
+                  <LoadingSpinner size="sm" color="gray" />
+                ) : (
+                  <CheckCircle className="h-4 w-4" />
+                )}
+                Test Connection
+              </button>
+              <button
                 onClick={handleRefreshToken}
                 disabled={actionLoading === 'refresh'}
                 className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
@@ -319,6 +354,12 @@ export default function QBOConnect() {
             </>
           )}
         </div>
+        {connectionTest.status === 'ok' && (
+          <p className="text-sm text-green-700">{connectionTest.message}</p>
+        )}
+        {connectionTest.status === 'error' && (
+          <p className="text-sm text-red-700">{connectionTest.message}</p>
+        )}
       </div>
 
       {toast && <Toast message={toast.message} type={toast.type} onDismiss={dismissToast} />}
