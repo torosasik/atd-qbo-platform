@@ -231,7 +231,14 @@ export default function HealthCheck() {
       {loadError && !loading && (
         <div className="flex items-center gap-3 bg-red-50 border border-red-300 text-red-800 rounded-xl px-5 py-4 text-sm">
           <AlertCircle className="h-5 w-5 flex-shrink-0" />
-          {loadError}
+          <span className="flex-1">{loadError}</span>
+          <button
+            onClick={fetchHealth}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-red-300 bg-white text-red-700 hover:bg-red-100 transition-colors"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Retry
+          </button>
         </div>
       )}
 
@@ -242,7 +249,7 @@ export default function HealthCheck() {
         </div>
       )}
 
-      {health && (
+      {!loadError && health && (
         <>
           {/* Overall status banner */}
           <StatusBanner status={health.status} />

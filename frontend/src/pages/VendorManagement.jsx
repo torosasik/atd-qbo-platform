@@ -173,7 +173,14 @@ export default function VendorManagement() {
       {loadError && (
         <div className="flex items-center gap-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-lg px-4 py-3 text-sm">
           <AlertCircle className="h-5 w-5 flex-shrink-0" />
-          {loadError}
+          <span className="flex-1">{loadError}</span>
+          <button
+            onClick={loadMappings}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-yellow-300 bg-white text-yellow-800 hover:bg-yellow-100 transition-colors"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Retry
+          </button>
         </div>
       )}
 
@@ -204,7 +211,7 @@ export default function VendorManagement() {
       </div>
 
       {/* Vendor table */}
-      {vendors.length === 0 ? (
+      {!loadError && vendors.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm px-6 py-12 text-center space-y-4">
           {qboConnected === false ? (
             <>
@@ -238,7 +245,7 @@ export default function VendorManagement() {
             </>
           )}
         </div>
-      ) : (
+      ) : !loadError ? (
         <div className="bg-white rounded-xl shadow-sm">
           {/* Search + bulk actions */}
           <div className="px-6 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center gap-3">
@@ -320,7 +327,7 @@ export default function VendorManagement() {
             </button>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Toast */}
       {toast && (

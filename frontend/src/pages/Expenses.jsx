@@ -352,8 +352,16 @@ export default function Expenses() {
             <p className="text-sm font-medium text-red-800">Error</p>
             <p className="text-sm text-red-600 mt-0.5">{error}</p>
           </div>
-          <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-600">
-            <XCircle className="h-4 w-4" />
+          <button
+            onClick={() => {
+              if (activeTab === 'uncategorized') fetchExpenses();
+              else if (activeTab === 'drafts') fetchDrafts();
+              else fetchHistory();
+            }}
+            className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-red-300 bg-white text-red-700 hover:bg-red-100 transition-colors"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Retry
           </button>
         </div>
       )}
@@ -407,7 +415,7 @@ export default function Expenses() {
       {/* ================================================================= */}
       {/* UNCATEGORIZED TAB */}
       {/* ================================================================= */}
-      {!loading && activeTab === 'uncategorized' && (
+      {!loading && !error && activeTab === 'uncategorized' && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           {/* Search */}
           <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
@@ -523,7 +531,7 @@ export default function Expenses() {
       {/* ================================================================= */}
       {/* DRAFTS TAB */}
       {/* ================================================================= */}
-      {!loading && activeTab === 'drafts' && (
+      {!loading && !error && activeTab === 'drafts' && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           {drafts.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
@@ -622,7 +630,7 @@ export default function Expenses() {
       {/* ================================================================= */}
       {/* HISTORY TAB */}
       {/* ================================================================= */}
-      {!loading && activeTab === 'history' && (
+      {!loading && !error && activeTab === 'history' && (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           {history.length === 0 ? (
             <div className="text-center py-16 text-gray-400">

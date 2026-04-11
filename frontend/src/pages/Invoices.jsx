@@ -1117,8 +1117,15 @@ function DraftsTab() {
       )}
 
       {error && (
-        <div className="mb-4 bg-red-50 border border-red-300 text-red-700 rounded-lg px-4 py-3 text-sm">
-          {error}
+        <div className="mb-4 bg-red-50 border border-red-300 text-red-700 rounded-lg px-4 py-3 text-sm flex items-center justify-between gap-3">
+          <span>{error}</span>
+          <button
+            onClick={fetchDrafts}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-red-300 bg-white text-red-700 hover:bg-red-100 transition-colors"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Retry
+          </button>
         </div>
       )}
 
@@ -1127,7 +1134,7 @@ function DraftsTab() {
           <div className="flex justify-center py-12">
             <LoadingSpinner size="lg" color="atd-blue" />
           </div>
-        ) : drafts.length === 0 ? (
+        ) : error ? null : drafts.length === 0 ? (
           <div className="text-center py-12 text-gray-400 text-sm">No pending drafts.</div>
         ) : (
           <>
