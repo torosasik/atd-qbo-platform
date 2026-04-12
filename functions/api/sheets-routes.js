@@ -10,6 +10,34 @@ const router = express.Router();
 
 const ORDERS_CACHE_DOC = 'cache/sheets_orders';
 const CACHE_TTL_MS = 5 * 60 * 1000;
+/**
+ * Detect and transpose column-oriented sheet data.
+ * The master sheet has field names in column A and each subsequent column
+ * represents an order (keyed by date in the header row).
+ */
+function transposeSheetData(headers, rows) {
+  if (!headers.length || !rows.length) return { headers, rows };
+  const labelColumn = headers[0];
+  const fieldLabels = rows.map((r) => String(r[labelColumn] || '').trim()).filter(Boolean);
+  const knownFields = ['Order #', 'SKU', 'Vendor', 'Item Name', 'Qty', 'Line Item #'];
+  const matchCount = knownFields.filter((f) =>
+    fieldLabels.some((label) => label.toLowerCase() === f.toLowerCase())
+  ).length;
+  if (matchCount < 3) return { headers, rows };
+  const newHeaders = fieldLabels;
+  const dataColumnHeaders = headers.slice(1).filter((h) => h.length <= 30);
+  const newRows = dataColumnHeaders.map((colHeader) => {
+    const obj = {};
+    for (let i = 0; i < rows.length; i++) {
+      const fieldName = String(rows[i][labelColumn] || '').trim();
+      if (!fieldName) continue;
+      obj[fieldName] = String(rows[i][colHeader] || '').trim();
+    }
+    return obj;
+  });
+  return { headers: newHeaders, rows: newRows };
+}
+
 
 function normalizeComparable(value) {
   return String(value || '').trim().toLowerCase();
@@ -143,7 +171,8 @@ router.get('/orders', async (req, res, next) => {
       return next(error);
     }
 
-    const { headers, rows } = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
+    const raw = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
+    const { headers, rows } = transposeSheetData(raw.headers, raw.rows);
 
     await cacheRef.set(
       {

@@ -42,7 +42,7 @@ export default function VendorManagement() {
     setLoadError(null);
     try {
       const [mappingsResult, authResult] = await Promise.all([
-        api.get('/vendor-mappings'),
+        api.get('/vendor/mappings'),
         api.getAuthStatus().catch(() => ({ connected: false })),
       ]);
       const data = mappingsResult.data ?? mappingsResult;
@@ -68,7 +68,7 @@ export default function VendorManagement() {
   async function handleSync() {
     setSyncing(true);
     try {
-      const res = await api.post('/vendor-mappings/sync', {});
+      const res = await api.post('/vendor/mappings/sync', {});
       const data = res.data ?? res;
       const mappings = data.mappings || {};
       const vendorList = Array.isArray(mappings.vendors) ? mappings.vendors : [];
@@ -91,7 +91,7 @@ export default function VendorManagement() {
   async function handleSave() {
     setSaving(true);
     try {
-      await api.put('/vendor-mappings', { vendors });
+      await api.put('/vendor/mappings', { vendors });
       setSavedVendors(JSON.parse(JSON.stringify(vendors)));
       showToast('Vendor settings saved.');
     } catch (err) {
@@ -328,11 +328,11 @@ export default function VendorManagement() {
                   return (
                     <tr key={v._idx} className={`hover:bg-gray-50 ${isHidden ? 'opacity-40' : ''}`}>
                       <td className="px-6 py-3">
-                        <input
-                          type="checkbox"
+                        <Toggle
+                          id={`active-${v._idx}`}
                           checked={!!v.active}
                           onChange={() => toggleActive(v._idx)}
-                          className="h-4 w-4 rounded border-gray-300 text-atd-blue focus:ring-atd-blue"
+                          ariaLabel={`Toggle active for ${v.qbo_name}`}
                         />
                       </td>
                       <td className="px-6 py-3">

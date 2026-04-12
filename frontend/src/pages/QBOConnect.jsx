@@ -4,8 +4,7 @@ import { api } from '../utils/api';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import Toast from '../components/shared/Toast';
 
-// Using full Cloud Function URL for "Connect to QuickBooks" to avoid Safe Browsing warning
-// on relative OAuth redirect paths (per exact task requirements)
+// Full Cloud Function URL for "Connect to QuickBooks" (avoids Safe Browsing warning on Firebase Hosting domains)
 const CONNECT_URL = 'https://us-central1-atd-qbo-platform.cloudfunctions.net/api/auth/connect';
 
 /**

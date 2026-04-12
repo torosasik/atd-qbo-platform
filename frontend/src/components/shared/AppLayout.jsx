@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import useFeatures from '../../utils/useFeatures';
+import { api } from '../../utils/api';
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'v0.1.0';
 import {
@@ -21,37 +22,142 @@ import {
   ClipboardList,
   ListOrdered,
   Scale,
+  AlertTriangle,
+  XCircle,
 } from 'lucide-react';
 
-// Each item can optionally have a `featureKey` — if present, the link is
-// only shown when that feature is enabled. Items without `featureKey` are
-// always visible (core platform pages).
-const mainNavItems = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/orders', label: 'Orders', icon: ListOrdered, featureKey: 'sheets_import' },
-  { to: '/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart, featureKey: 'purchase_orders' },
-  { to: '/invoices', label: 'Invoices', icon: FileText, featureKey: 'invoices' },
-  { to: '/bills', label: 'Bills', icon: Receipt, featureKey: 'bills' },
-  { to: '/payments', label: 'Payments', icon: CreditCard, featureKey: 'payments' },
-  { to: '/expenses', label: 'Expenses', icon: Wallet, featureKey: 'expenses' },
-  { to: '/ai-chat', label: 'AI Chat', icon: MessageSquare, featureKey: 'ai_chat' },
-  { to: '/qbo-connect', label: 'QBO Connect', icon: Link2 },
-  { to: '/settings', label: 'Settings', icon: Settings },
-  { to: '/vendor-management', label: 'Vendor Mapping', icon: Tags, featureKey: 'vendor_management' },
-  { to: '/rules', label: 'Business Rules', icon: Scale },
-  { to: '/activity-log', label: 'Activity Log', icon: ClipboardList },
-  { to: '/health', label: 'System Health', icon: Activity },
-  { to: '/help', label: 'Help & Docs', icon: HelpCircle },
+// ---------------------------------------------------------------------------
+// Navigation structure — grouped by workflow
+// ---------------------------------------------------------------------------
+
+const NAV_GROUPS = [
+  {
+    label: 'Operations',
+    items: [
+      { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+      { to: '/orders', label: 'Orders', icon: ListOrdered, featureKey: 'sheets_import' },
+      { to: '/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart, featureKey: 'purchase_orders' },
+      { to: '/invoices', label: 'Invoices', icon: FileText, featureKey: 'invoices' },
+      { to: '/bills', label: 'Bills', icon: Receipt, featureKey: 'bills' },
+      { to: '/payments', label: 'Payments', icon: CreditCard, featureKey: 'payments' },
+      { to: '/expenses', label: 'Expenses', icon: Wallet, featureKey: 'expenses' },
+      { to: '/ai-chat', label: 'AI Chat', icon: MessageSquare, featureKey: 'ai_chat' },
+    ],
+  },
+  {
+    label: 'Setup',
+    items: [
+      { to: '/qbo-connect', label: 'QBO Connect', icon: Link2 },
+      { to: '/vendor-management', label: 'Vendor Mapping', icon: Tags, featureKey: 'vendor_management' },
+      { to: '/rules', label: 'Business Rules', icon: Scale },
+      { to: '/settings', label: 'Settings', icon: Settings },
+    ],
+  },
+  {
+    label: 'Monitoring',
+    items: [
+      { to: '/activity-log', label: 'Activity Log', icon: ClipboardList },
+      { to: '/health', label: 'System Health', icon: Activity },
+      { to: '/help', label: 'Help & Docs', icon: HelpCircle },
+    ],
+  },
 ];
 
-const comingSoonItems = [];
+// ---------------------------------------------------------------------------
+// Translate raw health errors into user-friendly business messages
+// ---------------------------------------------------------------------------
+
+const ERROR_TRANSLATIONS = {
+  qbo: {
+    match: /(qbo|quickbooks|token|oauth|realm)/i,
+    message: 'QuickBooks is disconnected — PO creation and vendor lookups may fail.',
+    action: 'Reconnect QuickBooks',
+    link: '/qbo-connect',
+  },
+  sheets: {
+    match: /(sheet|google sheets|spreadsheet)/i,
+    message: 'Google Sheets connection issue — order imports are unavailable.',
+    action: 'Check Settings',
+    link: '/settings',
+  },
+  ai: {
+    match: /(ollama|claude|ai service|ai provider)/i,
+    message: 'AI review service is down — PO reviews will skip AI validation.',
+    action: 'View Health',
+    link: '/health',
+  },
+};
+
+function translateHealthError(rawError) {
+  const errStr = typeof rawError === 'string' ? rawError : rawError?.message || '';
+  for (const t of Object.values(ERROR_TRANSLATIONS)) {
+    if (t.match.test(errStr)) return t;
+  }
+  return {
+    message: 'A system service is experiencing issues.',
+    action: 'View Details',
+    link: '/health',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Global Health Banner — shown across all pages when system is unhealthy
+// ---------------------------------------------------------------------------
+
+function GlobalHealthBanner({ healthStatus, errors, onDismiss }) {
+  const navigate = useNavigate();
+  if (!healthStatus || healthStatus === 'healthy' || healthStatus === 'ok') return null;
+
+  const isUnhealthy = healthStatus === 'unhealthy';
+  const translated = errors?.length ? translateHealthError(errors[0]) : null;
+  const bannerMsg = translated?.message || (isUnhealthy
+    ? 'Critical services are down. Some features may not work correctly.'
+    : 'Some services are degraded. Non-critical features may be limited.');
+
+  return (
+    <div className={`flex items-center gap-3 px-4 py-2.5 text-sm ${
+      isUnhealthy
+        ? 'bg-red-50 border-b border-red-200 text-red-800'
+        : 'bg-yellow-50 border-b border-yellow-200 text-yellow-800'
+    }`}>
+      {isUnhealthy
+        ? <XCircle className="h-4 w-4 flex-shrink-0 text-red-500" />
+        : <AlertTriangle className="h-4 w-4 flex-shrink-0 text-yellow-500" />
+      }
+      <span className="flex-1 font-medium">{bannerMsg}</span>
+      {translated?.link && (
+        <button
+          onClick={() => navigate(translated.link)}
+          className={`text-xs font-semibold px-2.5 py-1 rounded-md transition-colors ${
+            isUnhealthy
+              ? 'bg-red-100 hover:bg-red-200 text-red-700'
+              : 'bg-yellow-100 hover:bg-yellow-200 text-yellow-700'
+          }`}
+        >
+          {translated.action}
+        </button>
+      )}
+      <button
+        onClick={onDismiss}
+        className="ml-1 flex-shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+        aria-label="Dismiss"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SidebarContent — grouped navigation
+// ---------------------------------------------------------------------------
 
 function SidebarContent({ onClose, features = {} }) {
-  // Filter nav items based on feature flags
-  const visibleNavItems = mainNavItems.filter(({ featureKey }) => {
-    if (!featureKey) return true; // always show items without a feature key
-    return features[featureKey] !== false; // show unless explicitly disabled
-  });
+  const filterItems = (items) =>
+    items.filter(({ featureKey }) => {
+      if (!featureKey) return true;
+      return features[featureKey] !== false;
+    });
 
   return (
     <div className="flex flex-col h-full">
@@ -72,48 +178,42 @@ function SidebarContent({ onClose, features = {} }) {
         )}
       </div>
 
-      {/* Main nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {visibleNavItems.map(({ to, label, icon: Icon, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            onClick={onClose}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                isActive
-                  ? 'bg-atd-blue text-white'
-                  : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-              }`
-            }
-          >
-            <Icon className="h-5 w-5 flex-shrink-0" />
-            {label}
-          </NavLink>
-        ))}
-
-        {/* Divider + Coming Soon section */}
-        <div className="pt-4">
-          <div className="border-t border-gray-600 mb-3" />
-          <div className="px-3 mb-2 text-xs font-semibold text-atd-silver uppercase tracking-wider">
-            Coming Soon
-          </div>
-          {comingSoonItems.map(({ label, icon: Icon }) => (
-            <div
-              key={label}
-              className="flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium text-gray-500 cursor-not-allowed"
-            >
-              <div className="flex items-center gap-3">
-                <Icon className="h-5 w-5 flex-shrink-0" />
-                {label}
+      {/* Grouped nav */}
+      <nav className="flex-1 px-3 py-4 overflow-y-auto">
+        {NAV_GROUPS.map((group, gi) => {
+          const visibleItems = filterItems(group.items);
+          if (visibleItems.length === 0) return null;
+          return (
+            <div key={group.label} className={gi > 0 ? 'mt-5' : ''}>
+              {/* Group header — skip for first group to keep Dashboard prominent */}
+              {gi > 0 && (
+                <div className="px-3 mb-2 text-[10px] font-semibold text-gray-500 uppercase tracking-widest">
+                  {group.label}
+                </div>
+              )}
+              <div className="space-y-0.5">
+                {visibleItems.map(({ to, label, icon: Icon, end }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={end}
+                    onClick={onClose}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        isActive
+                          ? 'bg-atd-blue text-white'
+                          : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                      }`
+                    }
+                  >
+                    <Icon className="h-4.5 w-4.5 flex-shrink-0" />
+                    {label}
+                  </NavLink>
+                ))}
               </div>
-              <span className="text-xs bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded">
-                Soon
-              </span>
             </div>
-          ))}
-        </div>
+          );
+        })}
       </nav>
 
       {/* Version */}
@@ -124,9 +224,38 @@ function SidebarContent({ onClose, features = {} }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// AppLayout — main layout shell
+// ---------------------------------------------------------------------------
+
 export default function AppLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { features } = useFeatures();
+
+  // Global health check — lightweight poll
+  const [healthStatus, setHealthStatus] = useState(null);
+  const [healthErrors, setHealthErrors] = useState([]);
+  const [healthDismissed, setHealthDismissed] = useState(false);
+
+  const fetchHealth = useCallback(async () => {
+    try {
+      const data = await api.getHealth();
+      setHealthStatus(data?.status || null);
+      setHealthErrors(data?.errors || []);
+      // Auto-show banner again if status changed to worse
+      if (data?.status === 'unhealthy' || data?.status === 'degraded') {
+        setHealthDismissed(false);
+      }
+    } catch {
+      // Silent fail — don't block UI for health check
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchHealth();
+    const id = setInterval(fetchHealth, 120_000); // Check every 2 minutes
+    return () => clearInterval(id);
+  }, [fetchHealth]);
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -161,6 +290,15 @@ export default function AppLayout({ children }) {
           </button>
           <span className="text-white font-semibold text-base">ATD QBO Platform</span>
         </header>
+
+        {/* Global health warning banner */}
+        {!healthDismissed && (
+          <GlobalHealthBanner
+            healthStatus={healthStatus}
+            errors={healthErrors}
+            onDismiss={() => setHealthDismissed(true)}
+          />
+        )}
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto bg-gray-50">

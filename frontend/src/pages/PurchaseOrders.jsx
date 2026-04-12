@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   Plus,
   X,
@@ -477,7 +477,7 @@ function CreateNewItemModal({ isOpen, onClose, onSuccess, initialName }) {
 // ---------------------------------------------------------------------------
 // Tab 1: Create New
 // ---------------------------------------------------------------------------
-function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHistory, onRefreshItems }) {
+function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHistory, onRefreshItems, prefillRows, prefillHeaders }) {
   const [form, setForm] = useState({
     vendorId: '',
     vendorName: '',
@@ -490,6 +490,84 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
     autoApprove: false,
     aiEnabled: true,
   });
+  const [prefillApplied, setPrefillApplied] = useState(false);
+
+  // ---------------------------------------------------------------------------
+  // Prefill from Orders page: map selected order rows to PO form fields
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (prefillApplied || !prefillRows?.length || vendorsLoading) return;
+
+    const hdrs = prefillHeaders || [];
+    const findHdr = (candidates) => {
+      const lower = hdrs.map((h) => ({ o: h, l: h.toLowerCase().trim() }));
+      for (const c of candidates) {
+        const m = lower.find((h) => h.l === c.toLowerCase().trim());
+        if (m) return m.o;
+      }
+      // Fallback: check first row keys
+      if (prefillRows[0]) {
+        const keys = Object.keys(prefillRows[0]);
+        const kLower = keys.map((k) => ({ o: k, l: k.toLowerCase().trim() }));
+        for (const c of candidates) {
+          const m = kLower.find((h) => h.l === c.toLowerCase().trim());
+          if (m) return m.o;
+        }
+      }
+      return null;
+    };
+
+    const skuKey = findHdr(['SKU', 'Sku']);
+    const nameKey = findHdr(['Item Name', 'Item Description', 'Description', 'Line Item']);
+    const qtyKey = findHdr(['Qty', 'Quantity']);
+    const vendorKey = findHdr(['Vendor', 'Vendor Name', 'Supplier']);
+    const orderKey = findHdr(['Order #', 'Order Number']);
+    const priceKey = findHdr(['Unit Price', 'Price', 'Cost']);
+
+    // Build line items from prefill rows
+    const lines = prefillRows.map((row) => ({
+      _id: generateId(),
+      itemId: '',
+      itemName: nameKey ? String(row[nameKey] || '') : '',
+      sku: skuKey ? String(row[skuKey] || '') : '',
+      description: nameKey ? String(row[nameKey] || '') : '',
+      qty: qtyKey ? (parseFloat(row[qtyKey]) || 1) : 1,
+      unit: 'Sq Ft',
+      unitPrice: priceKey ? String(row[priceKey] || '') : '',
+    }));
+
+    // Try to match vendor from first row
+    const vendorCode = vendorKey ? String(prefillRows[0][vendorKey] || '').trim() : '';
+    let matchedVendor = null;
+    if (vendorCode && vendors.length) {
+      // Match by shopify_code (e.g., "DT" → Daltile)
+      matchedVendor = vendors.find((v) =>
+        v.shopify_code?.toLowerCase() === vendorCode.toLowerCase()
+      );
+      // Fallback: partial name match
+      if (!matchedVendor) {
+        matchedVendor = vendors.find((v) =>
+          v.DisplayName?.toLowerCase().includes(vendorCode.toLowerCase())
+        );
+      }
+    }
+
+    // Build order numbers for memo
+    const orderNums = orderKey
+      ? [...new Set(prefillRows.map((r) => r[orderKey]).filter(Boolean))].join(', ')
+      : '';
+
+    setForm((prev) => ({
+      ...prev,
+      vendorId: matchedVendor?.Id || '',
+      vendorName: matchedVendor?.DisplayName || '',
+      memo: orderNums ? `Orders: ${orderNums}` : prev.memo,
+      lines: lines.length > 0 ? lines : [emptyLine()],
+    }));
+
+    setPrefillApplied(true);
+  }, [prefillRows, prefillHeaders, vendors, vendorsLoading, prefillApplied]);
+
   const [vendorSearch, setVendorSearch] = useState('');
   const [vendorOpen, setVendorOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -726,13 +804,22 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
             Vendor <span className="text-red-500">*</span>
           </label>
           {!vendorsLoading && vendors.length === 0 ? (
-            <p className="text-sm text-yellow-600 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
-              No vendors configured. Go to{' '}
-              <Link to="/vendor-management" className="font-medium underline hover:text-yellow-700">
-                Vendor Management
-              </Link>{' '}
-              to sync.
-            </p>
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3 space-y-2">
+              <p className="text-sm font-medium text-yellow-800">
+                Cannot load vendors — QuickBooks connection may be unavailable.
+              </p>
+              <p className="text-xs text-yellow-600">
+                Vendor selection requires an active QuickBooks connection. If you recently connected, try syncing your vendor list.
+              </p>
+              <div className="flex items-center gap-3">
+                <Link to="/qbo-connect" className="inline-flex items-center gap-1 text-xs font-semibold text-yellow-700 hover:text-yellow-900 underline">
+                  Check QBO Connection
+                </Link>
+                <Link to="/vendor-management" className="inline-flex items-center gap-1 text-xs font-semibold text-yellow-700 hover:text-yellow-900 underline">
+                  Sync Vendors
+                </Link>
+              </div>
+            </div>
           ) : (
           <div className="relative" ref={vendorDropdownRef}>
             <button
@@ -1630,6 +1717,10 @@ function ImportFromSheetsTab() {
 const TABS = ['Create New', 'Pending Drafts', 'History', 'Import from Sheets'];
 
 export default function PurchaseOrders({ initialTab }) {
+  const location = useLocation();
+  const prefillRows = location.state?.prefillRows || null;
+  const prefillHeaders = location.state?.headers || null;
+
   // If initialTab is provided, set that tab. Otherwise use state.
   const [activeTab, setActiveTab] = useState(() => {
     if (initialTab === 'drafts') return 1;
@@ -1666,10 +1757,10 @@ export default function PurchaseOrders({ initialTab }) {
         const mappingsRes = await api.getVendorMappings();
         cachedMappingsRaw = mappingsRes;
         setCache('vendorMappings', mappingsRes);
-        const allVendors = mappingsRes.mappings?.vendors || [];
+        const allVendors = mappingsRes.data?.mappings?.vendors || mappingsRes.mappings?.vendors || [];
         activeVendors = allVendors
           .filter((v) => v.active && v.visible !== false)
-          .map((v) => ({ Id: v.qbo_id, DisplayName: v.qbo_name }));
+          .map((v) => ({ Id: v.qbo_id, DisplayName: v.qbo_name, shopify_code: v.shopify_code || '' }));
         setCache('vendors', activeVendors);
       }
       setVendors(activeVendors);
@@ -1748,7 +1839,7 @@ export default function PurchaseOrders({ initialTab }) {
       </div>
 
       {activeTab === 0 && (
-        <CreateTab vendors={vendors} qboVendors={qboVendors} items={items} vendorsLoading={vendorsLoading} onSwitchToHistory={() => setActiveTab(2)} onRefreshItems={fetchItems} />
+        <CreateTab vendors={vendors} qboVendors={qboVendors} items={items} vendorsLoading={vendorsLoading} onSwitchToHistory={() => setActiveTab(2)} onRefreshItems={fetchItems} prefillRows={prefillRows} prefillHeaders={prefillHeaders} />
       )}
       {activeTab === 1 && <DraftsTab />}
       {activeTab === 2 && <HistoryTab />}

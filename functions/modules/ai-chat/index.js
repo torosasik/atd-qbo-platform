@@ -87,6 +87,20 @@ async function fetchContextData(needs) {
     });
   }
 
+  if (needs.includes('rules')) {
+    fetches.push({
+      name: 'rules',
+      promise: (async () => {
+        const db = getFirestore();
+        const snap = await db
+          .collection('business_rules')
+          .where('active', '==', true)
+          .get();
+        return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      })()
+    });
+  }
+
   const results = await Promise.allSettled(fetches.map(f => f.promise));
   for (let index = 0; index < fetches.length; index++) {
     const fetch = fetches[index];

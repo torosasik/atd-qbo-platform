@@ -228,6 +228,7 @@ const schemas = {
 };
 
 module.exports = {
+  cors,
   validateRequest,
   sendError,
   sendSuccess,

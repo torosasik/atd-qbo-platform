@@ -109,4 +109,43 @@ router.post('/refresh', async (req, res, next) => {
   }
 });
 
+// GET /qbo/company-info (mounted at /qbo in index.js)
+// Used by the QBO Connect "Test Connection" button
+router.get('/company-info', async (req, res, next) => {
+  try {
+    const { ensureValidToken, getQboBaseUrl, getRealmId } = require('../core/qbo-auth');
+    const fetch = require('node-fetch');
+
+    const accessToken = await ensureValidToken();
+    const baseUrl = await getQboBaseUrl();
+    const realmId = await getRealmId();
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const qboRes = await fetch(
+      `${baseUrl}/v3/company/${realmId}/companyinfo/${realmId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'application/json',
+        },
+        signal: controller.signal,
+      }
+    );
+    clearTimeout(timer);
+
+    if (!qboRes.ok) {
+      const errText = await qboRes.text().catch(() => '');
+      const error = new Error(`QBO API returned HTTP ${qboRes.status}: ${errText.slice(0, 200)}`);
+      error.status = qboRes.status;
+      return next(error);
+    }
+
+    const data = await qboRes.json();
+    sendSuccess(res, data);
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

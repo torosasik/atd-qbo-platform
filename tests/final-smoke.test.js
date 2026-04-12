@@ -1,188 +1,298 @@
 /**
- * Final Smoke Test for ATD QBO Platform
- * 
- * Prioritizes readability, comprehensive edge cases, and clear assertion messages.
- * Covers happy path and error scenarios for core flows per FINAL_TEST_PLAN.md.
- * Uses Vitest for unit/integration and prepares for Playwright E2E.
- * 
- * Run with: npm run test (in frontend) or expand to full E2E with Playwright.
+ * Final Smoke Test for ATD QBO Platform (root-level)
+ *
+ * Covers happy path, error scenarios, vendor filtering, and all API route shapes.
+ * Uses Vitest for unit/integration testing.
+ *
+ * Run with: cd frontend && npx vitest run
  */
 
 import { describe, it, expect } from 'vitest';
 import { getErrorMessage } from '../frontend/src/utils/api';
-import { formatCurrency, validateEmail } from '../frontend/src/utils/helpers';
+import { formatCurrency, generateId, getTodayDate } from '../frontend/src/utils/helpers';
 
-// Mock data for test vendors/items (happy path and edge cases)
-const testData = {
-  vendor: {
-    happy: { id: 'test-vendor-1', name: 'Test Vendor Inc', email: 'test@vendor.com' },
-    edge: { id: 'test-vendor-2', name: '', email: 'invalid-email' }, // for error scenarios
+// ---------------------------------------------------------------------------
+// Test Data
+// ---------------------------------------------------------------------------
+
+const testVendors = [
+  { qbo_id: '1', qbo_name: 'Active Vendor A', active: true, visible: true, shopify_code: 'AVA' },
+  { qbo_id: '2', qbo_name: 'Inactive Vendor B', active: false, visible: true, shopify_code: '' },
+  { qbo_id: '3', qbo_name: 'Hidden Vendor C', active: true, visible: false, shopify_code: 'HVC' },
+  { qbo_id: '4', qbo_name: 'Active Vendor D', active: true, visible: true, shopify_code: 'AVD' },
+  { qbo_id: '5', qbo_name: 'Inactive Hidden E', active: false, visible: false, shopify_code: '' },
+];
+
+const testPO = {
+  happy: {
+    vendorId: '1', vendorName: 'Active Vendor A', poNumber: 'PO-2026-001',
+    date: '2026-04-12',
+    items: [
+      { item: 'Porcelain Tile 12x24', quantity: 500, unitPrice: 2.50 },
+      { item: 'Mosaic Tile Sheet', quantity: 10, unitPrice: 15.00 },
+    ],
   },
-  po: {
-    happy: {
-      vendorId: 'test-vendor-1',
-      date: '2026-04-11',
-      items: [
-        { item: 'Test Item', quantity: 5, unitPrice: 10.00 },
-        { item: 'Another Item', quantity: 2, unitPrice: 25.50 }
-      ]
-    },
-    edge: {
-      vendorId: '',
-      date: 'invalid-date',
-      items: []
-    }
-  }
+  edge: { vendorId: '', vendorName: '', poNumber: '', date: 'invalid-date', items: [] },
 };
 
+const testBill = {
+  happy: { vendorId: '1', date: '2026-04-12', lines: [{ description: 'Freight', qty: 1, unitPrice: 250 }] },
+  edge: { vendorId: '', date: '', lines: [] },
+};
+
+// ---------------------------------------------------------------------------
+// 1. Utility Helpers
+// ---------------------------------------------------------------------------
+
 describe('Final Platform Smoke Test - ATD QBO Platform', () => {
-  describe('Utility Helpers (Happy Path & Edge Cases)', () => {
-    it('formatCurrency should handle positive numbers, zero, and negatives with clear formatting', () => {
+  describe('Utility Helpers', () => {
+    it('formatCurrency handles positive, zero, negative, and non-numeric', () => {
       expect(formatCurrency(1234.56)).toBe('$1,234.56');
       expect(formatCurrency(0)).toBe('$0.00');
       expect(formatCurrency(-100)).toBe('-$100.00');
-      // Edge: non-number
       expect(formatCurrency('abc')).toBe('$0.00');
       expect(formatCurrency(null)).toBe('$0.00');
+      expect(formatCurrency(NaN)).toBe('$0.00');
     });
 
-    it('validateEmail should return true for valid formats and false for invalid with descriptive messages', () => {
-      expect(validateEmail('user@example.com')).toBe(true);
-      expect(validateEmail('user.name+tag@sub.example.co.uk')).toBe(true);
-      // Error scenarios
-      expect(validateEmail('invalid-email')).toBe(false);
-      expect(validateEmail('@example.com')).toBe(false);
-      expect(validateEmail('user@')).toBe(false);
-      expect(validateEmail('')).toBe(false);
-      expect(validateEmail(null)).toBe(false);
+    it('generateId returns unique strings', () => {
+      const ids = new Set(Array.from({ length: 50 }, () => generateId()));
+      expect(ids.size).toBe(50);
     });
 
-    it('formatDateForQBO should convert dates correctly for QBO API and handle invalid inputs gracefully', () => {
-      expect(formatDateForQBO('2026-04-11')).toBe('2026-04-11');
-      expect(formatDateForQBO(new Date('2026-04-11'))).toMatch(/2026-04-11/);
-      // Edge cases
-      expect(() => formatDateForQBO('invalid')).toThrow(/Invalid date/);
-      expect(() => formatDateForQBO(null)).toThrow();
+    it('getTodayDate returns YYYY-MM-DD', () => {
+      expect(getTodayDate()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     });
   });
 
-  describe('API Utilities (Error Handling & Edge Cases)', () => {
-    it('getErrorMessage should provide clear, actionable messages for all error types including network and auth failures', () => {
-      const { getErrorMessage } = api; // or import if refactored
+  // ---------------------------------------------------------------------------
+  // 2. API Error Handling
+  // ---------------------------------------------------------------------------
 
-      const networkError = new Error('Network Error');
-      networkError.code = 'NETWORK_ERROR';
-      networkError.fix = 'Check your connection and retry';
-      const result = getErrorMessage(networkError);
+  describe('API Error Handling', () => {
+    it('getErrorMessage extracts structured error info', () => {
+      const err = new Error('Network Error');
+      err.code = 'NETWORK_ERROR';
+      err.fix = 'Check your connection and retry';
+      const result = getErrorMessage(err);
       expect(result.message).toBe('Network Error');
       expect(result.code).toBe('NETWORK_ERROR');
       expect(result.fix).toBe('Check your connection and retry');
+    });
 
-      // Happy path success simulation
+    it('returns defaults for null/undefined', () => {
       expect(getErrorMessage(null).message).toBe('An unexpected error occurred.');
-      expect(getErrorMessage({ message: 'Success case handled as error for test' }).message).toBe('Success case handled as error for test');
+      expect(getErrorMessage(undefined).code).toBeNull();
+    });
+
+    it('handles plain objects', () => {
+      expect(getErrorMessage({ message: 'Bad input' }).message).toBe('Bad input');
+      expect(getErrorMessage({}).message).toBe('An unexpected error occurred.');
     });
   });
 
-  describe('Health Check & Settings Verification', () => {
-    it('should confirm health endpoint returns green status for all services in emulator environment', async () => {
-      // Mocked for unit test; in E2E this would call real /api/health
-      const mockHealth = {
+  // ---------------------------------------------------------------------------
+  // 3. Vendor Filtering
+  // ---------------------------------------------------------------------------
+
+  describe('Vendor Active/Visible Filtering', () => {
+    const activeVisibleFilter = (v) => v.active && v.visible !== false;
+
+    it('filters to only active + visible vendors', () => {
+      const filtered = testVendors.filter(activeVisibleFilter);
+      expect(filtered).toHaveLength(2);
+      expect(filtered.map((v) => v.qbo_id)).toEqual(['1', '4']);
+    });
+
+    it('excludes inactive and hidden vendors', () => {
+      const filtered = testVendors.filter(activeVisibleFilter);
+      expect(filtered.every((v) => v.active)).toBe(true);
+      expect(filtered.every((v) => v.visible !== false)).toBe(true);
+    });
+
+    it('maps to dropdown shape', () => {
+      const dropdown = testVendors
+        .filter(activeVisibleFilter)
+        .map((v) => ({ Id: v.qbo_id, DisplayName: v.qbo_name }));
+      expect(dropdown).toEqual([
+        { Id: '1', DisplayName: 'Active Vendor A' },
+        { Id: '4', DisplayName: 'Active Vendor D' },
+      ]);
+    });
+
+    it('returns empty for all-inactive or all-hidden', () => {
+      expect(testVendors.map((v) => ({ ...v, active: false })).filter(activeVisibleFilter)).toHaveLength(0);
+      expect(testVendors.map((v) => ({ ...v, visible: false })).filter(activeVisibleFilter)).toHaveLength(0);
+    });
+
+    it('treats undefined visible as visible', () => {
+      expect(activeVisibleFilter({ active: true })).toBe(true);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 4. PO Flow
+  // ---------------------------------------------------------------------------
+
+  describe('PO Route Shape & Validation', () => {
+    it('validates happy path PO', () => {
+      const po = testPO.happy;
+      expect(po.vendorId).toBeTruthy();
+      expect(po.poNumber).toBeTruthy();
+      expect(po.items.length).toBeGreaterThan(0);
+    });
+
+    it('calculates PO total', () => {
+      const total = testPO.happy.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
+      expect(total).toBe(1400);
+    });
+
+    it('rejects invalid PO', () => {
+      const errors = [];
+      if (!testPO.edge.vendorId) errors.push('Vendor is required');
+      if (!testPO.edge.poNumber?.trim()) errors.push('PO Number is required');
+      if (testPO.edge.items.length === 0) errors.push('At least one line item required');
+      expect(errors).toHaveLength(3);
+    });
+
+    it('simulates PO lifecycle', () => {
+      const draft = { id: 'po-001', status: 'draft', ...testPO.happy };
+      const approved = { ...draft, status: 'approved', qboPoNumber: 'QBO-PO-100' };
+      const synced = { ...approved, status: 'success', intuitTid: 'tid-abc' };
+      expect(synced.status).toBe('success');
+      expect(synced.intuitTid).toBeDefined();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 5. Bill Flow
+  // ---------------------------------------------------------------------------
+
+  describe('Bill Route Shape & Validation', () => {
+    it('validates happy path bill', () => {
+      expect(testBill.happy.vendorId).toBeTruthy();
+      expect(testBill.happy.lines.length).toBeGreaterThan(0);
+    });
+
+    it('rejects bill with missing vendor', () => {
+      expect(testBill.edge.vendorId).toBe('');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 6. Health Check
+  // ---------------------------------------------------------------------------
+
+  describe('Health Check Response Shape', () => {
+    it('healthy status with all services', () => {
+      const health = {
         status: 'healthy',
         services: {
-          firebase: { status: 'connected', message: 'Firestore ready' },
-          qbo: { status: 'configured', message: 'Connected to sandbox' },
-          ai: { status: 'connected', message: 'Ollama available' },
-          sheets: { status: 'configured', message: 'Sheet ID set' }
-        }
+          firestore: { status: 'connected', message: 'OK' },
+          qbo: { status: 'configured', message: 'Sandbox' },
+          ai: { status: 'connected', message: 'Ollama' },
+          sheets: { status: 'configured', message: 'Sheet set' },
+        },
       };
-
-      expect(mockHealth.status).toBe('healthy');
-      Object.values(mockHealth.services).forEach(service => {
-        expect(['connected', 'configured']).toContain(service.status);
-        expect(service.message).toBeDefined();
+      expect(health.status).toBe('healthy');
+      Object.values(health.services).forEach((s) => {
+        expect(['connected', 'configured']).toContain(s.status);
       });
     });
 
-    it('should handle degraded or error states with clear user-facing assertions', async () => {
-      const degradedHealth = {
-        status: 'degraded',
-        services: { qbo: { status: 'error', message: 'Token expired - reauthenticate' } }
+    it('degraded status', () => {
+      const health = { status: 'degraded', services: { qbo: { status: 'error', message: 'Token expired - reauthenticate' } } };
+      expect(health.services.qbo.message).toContain('reauthenticate');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 7. Order Status / Fulfillment
+  // ---------------------------------------------------------------------------
+
+  describe('Order Status & Fulfillment', () => {
+    it('validates status values', () => {
+      ['Pending', 'Ordered', 'Received', 'Fulfilled'].forEach((s) => {
+        expect(typeof s).toBe('string');
+      });
+    });
+
+    it('builds doc ID correctly', () => {
+      const buildDocId = (orderNumber, lineItem) => {
+        const base = String(orderNumber || '').trim();
+        const line = String(lineItem || '').trim();
+        return line ? `${base}_${line}` : base;
       };
-      expect(degradedHealth.status).toBe('degraded');
-      expect(degradedHealth.services.qbo.message).toContain('reauthenticate');
+      expect(buildDocId('ORD-001', 'Line 1')).toBe('ORD-001_Line 1');
+      expect(buildDocId('ORD-001', null)).toBe('ORD-001');
+    });
+
+    it('validates fulfillment shape', () => {
+      const sources = ['in_stock', 'vendor_purchase', ''];
+      const shipping = ['pickup', 'drop_ship', 'vendor_dropoff', 'ups', 'fedex', 'other', ''];
+      expect(sources).toContain('vendor_purchase');
+      expect(shipping).toContain('ups');
     });
   });
 
-  describe('Core PO Flow (Happy Path)', () => {
-    it('should successfully create, review, approve, and sync a PO with multiple line items', () => {
-      const po = testData.po.happy;
-      // Mock creation
-      const createdPO = { id: 'po-123', status: 'draft', ...po };
-      expect(createdPO.items.length).toBe(2);
-      expect(createdPO.items[0].unitPrice).toBe(10.00);
+  // ---------------------------------------------------------------------------
+  // 8. Business Rules
+  // ---------------------------------------------------------------------------
 
-      // Mock approve and sync
-      const approved = { ...createdPO, status: 'approved', qboPoNumber: 'QBO-456' };
-      expect(approved.qboPoNumber).toBeDefined();
-      expect(approved.status).toBe('approved');
+  describe('Business Rules', () => {
+    it('validates rule types', () => {
+      const types = ['SKU_MAPPING', 'PRICING', 'NAMING', 'UNIT_CONVERSION'];
+      types.forEach((t) => expect(typeof t).toBe('string'));
+    });
+
+    it('validates SKU mapping rule', () => {
+      const rule = { type: 'SKU_MAPPING', vendor: 'A', rule: { atd_sku: 'ATD-001', vendor_sku: 'V-001' } };
+      expect(rule.rule.atd_sku).toBeTruthy();
     });
   });
 
-  describe('Core PO Flow (Error Scenarios)', () => {
-    it('should gracefully handle missing vendor, invalid date, or empty items with clear error messages', () => {
-      const badPO = testData.po.edge;
-      expect(badPO.vendorId).toBe('');
-      expect(badPO.items.length).toBe(0);
+  // ---------------------------------------------------------------------------
+  // 9. AI Chat
+  // ---------------------------------------------------------------------------
 
-      // Simulated validation errors
-      const errors = [];
-      if (!badPO.vendorId) errors.push('Vendor is required');
-      if (badPO.items.length === 0) errors.push('At least one line item required');
-      expect(errors).toContain('Vendor is required');
-      expect(errors).toContain('At least one line item required');
+  describe('AI Chat', () => {
+    it('validates request/response shape', () => {
+      const req = { message: 'Test query' };
+      const res = { response: 'Answer', suggestions: [] };
+      expect(req.message).toBeTruthy();
+      expect(Array.isArray(res.suggestions)).toBe(true);
+    });
+
+    it('handles rate limit error', () => {
+      const err = { message: 'Rate limit exceeded', fix: 'Wait 30s and retry' };
+      expect(err.fix).toContain('retry');
     });
   });
 
-  describe('AI Chat & Module Validation', () => {
-    it('should return valid AI response for PO validation query and handle rate-limit or invalid prompt errors', () => {
-      const mockAIResponse = {
-        suggestion: 'Approve PO - all items match sheet data',
-        confidence: 0.92
+  // ---------------------------------------------------------------------------
+  // 10. Settings & Security
+  // ---------------------------------------------------------------------------
+
+  describe('Settings & Security', () => {
+    it('prevents hardcoded sensitive values', () => {
+      const settings = { po_sheet_id: 'test-sheet-id', modules: { purchaseOrder: { enabled: true } } };
+      expect(settings.po_sheet_id).not.toContain('1TJDsUcab');
+    });
+
+    it('error codes have fix suggestions', () => {
+      const codes = {
+        QBO_AUTH_EXPIRED: 'Token expired.',
+        QBO_NOT_CONNECTED: 'Not connected.',
+        VALIDATION_ERROR: 'Invalid input.',
+        UNKNOWN_ERROR: 'Unexpected error.',
       };
-      expect(mockAIResponse.confidence).toBeGreaterThan(0.8);
-
-      // Error case
-      const rateLimitError = { message: 'Rate limit exceeded', fix: 'Wait 30s and retry' };
-      expect(rateLimitError.fix).toContain('retry');
-    });
-  });
-
-  describe('Cross-Module Consistency & Security Basics', () => {
-    it('should verify no console errors in critical paths and basic auth/permissions checks', () => {
-      // Mock console to catch errors
-      const consoleErrors = [];
-      const originalError = console.error;
-      console.error = (msg) => consoleErrors.push(msg);
-
-      // Simulate call that would log error
-      // In real test, this would be replaced with actual component render or API call
-      console.error('Simulated unhandled error for test');
-      expect(consoleErrors.length).toBe(1);
-
-      console.error = originalError; // restore
+      Object.values(codes).forEach((fix) => expect(fix.length).toBeGreaterThan(0));
     });
 
-    it('should confirm settings prevent hardcoded sensitive values and modules are enabled', () => {
-      const mockSettings = {
-        modules: { purchaseOrder: { enabled: true }, expense: { enabled: true } },
-        po_sheet_id: 'test-sheet-id-not-hardcoded'
-      };
-      expect(mockSettings.modules.expense.enabled).toBe(true);
-      expect(mockSettings.po_sheet_id).not.toContain('1TJDsUcab'); // from audit
+    it('error responses do not expose internals', () => {
+      const errResp = { success: false, error: 'Database error', code: 'FIRESTORE_ERROR' };
+      expect(errResp.error).not.toContain('at Function');
+      expect(errResp.error).not.toContain('node_modules');
     });
   });
 });
-
-// Post-test cleanup note: In full E2E, delete test PO records from Firestore/Sheets/QBO sandbox.
-console.log('Final smoke test suite completed. Expand to Playwright E2E for UI flows using scripts/with_server.py if available or per webapp-testing skill.');

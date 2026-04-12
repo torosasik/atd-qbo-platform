@@ -22,7 +22,7 @@ const healthRoutes = require('./api/health-routes');
 const activityLogRoutes = require('./api/activity-log');
 const orderStatusRoutes = require('./api/order-status-routes');
 const rulesRoutes = require('./api/rules');
-
+const orderFulfillmentRoutes = require('./api/order-fulfillment-routes');
 const { logAction } = require('./core/logger');
 
 // ---------------------------------------------------------------------------
@@ -45,26 +45,45 @@ const ERROR_CODES = {
 const app = express();
 app.use(express.json());
 
+const middleware = require('./api/middleware');
+
+// CORS must be applied at the top level for direct Cloud Function calls (the /api/auth/connect from QBOConnect.jsx)
+app.use((req, res, next) => middleware.cors(req, res, next)); // explicit wrapper to ensure middleware function (historical fix for TypeError)
+
 // Create API router to ensure consistent /api prefix matching Vite proxy, frontend calls, and Firebase rewrite
 const apiRouter = express.Router();
 
+// Specific routes first (order matters - /auth must precede catch-all '/' routes)
+apiRouter.use('/auth', authRoutes);
+apiRouter.use('/qbo', authRoutes); // /qbo/company-info for test connection button
 apiRouter.use('/po', poRoutes);
 apiRouter.use('/invoices', invoiceRoutes);
 apiRouter.use('/bills', billRoutes);
 apiRouter.use('/payments', paymentRoutes);
 apiRouter.use('/expenses', expenseRoutes);
 apiRouter.use('/ai', aiRoutes);
-apiRouter.use('/', cacheRoutes); // customers, vendors, items, accounts, open-invoices, /items/create
-apiRouter.use('/', settingsRoutes); // settings
-apiRouter.use('/', sheetsRoutes); // sheets/test-connection, sheets/preview, sheets/import
-apiRouter.use('/auth', authRoutes);
-apiRouter.use('/vendor', vendorRoutes); // /vendor-mappings
-apiRouter.use('/', healthRoutes); // health
+apiRouter.use('/vendor', vendorRoutes); // /vendor/mappings, /vendor/mappings/sync // /vendor-mappings
+apiRouter.use('/health', healthRoutes); // health
 apiRouter.use('/activity-log', activityLogRoutes);
 apiRouter.use('/order-statuses', orderStatusRoutes);
 apiRouter.use('/rules', rulesRoutes);
+apiRouter.use('/order-fulfillment', orderFulfillmentRoutes);
+// Catch-all routes last (these were intercepting /auth/* before)
+apiRouter.use('/', cacheRoutes); // customers, vendors, items, accounts, open-invoices, /items/create
+apiRouter.use('/settings', settingsRoutes); // settings
+apiRouter.use('/sheets', sheetsRoutes); // sheets/test-connection, sheets/preview, sheets/import
 
+// DEBUG: Add catch-all for /test to prevent 404 on simple test probes (common in debug/health checks)
+apiRouter.use('/test', (req, res) => {
+  console.log('[DEBUG-INDEX] /test endpoint hit - returning success for probe');
+  res.json({ success: true, message: 'Test endpoint OK', timestamp: new Date().toISOString() });
+});
+
+// Mount apiRouter twice:
+// 1) For Firebase Hosting domain requests (path preserved as /api/...)
 app.use('/api', apiRouter);
+// 2) For direct Cloud Function URL requests (function name stripped, path is /auth/... etc.)
+app.use(apiRouter);
 
 // 404 handler - must come before global error handler to return JSON instead of HTML
 app.use((req, res) => {
@@ -107,3 +126,21 @@ app.use(async (err, req, res, next) => {
 });
 
 exports.api = functions.https.onRequest(app);
+// force redeploy 1775970374
+// redeploy trigger - oauth redirect_uri and health route fixed 1775970916
+// redeploy trigger - fixed health route mounting 1775971611
+// redeploy trigger - health route now uses /health in router 1775971719
+// redeploy trigger - fixed /auth route order before catch-all '/' (404 on /auth/connect) 1775972608
+// redeploy trigger - reordered routes so /auth comes BEFORE all catch-all '/' middleware (fixes 404 on /auth/connect) 1775972741
+// redeploy trigger - added top-level CORS middleware for direct CF calls to /api/auth/connect from QBOConnect.jsx 1775972841
+// redeploy trigger - fixed require for middleware.cors (was causing deployment error) 1775972863
+// redeploy trigger - fixed middleware destructuring for cors (TypeError on app.use) 1775972889
+// redeploy trigger - fixed middleware require to use full object (cors is not default export) 1775972915
+// redeploy trigger - wrapped middleware.cors in arrow function to satisfy app.use() expectation 1775972938
+// redeploy trigger - reverted to direct middleware.cors (previous wrapper caused 500) 1775973045
+// redeploy trigger - switched to destructuring { cors } from middleware (final fix for app.use) 1775973072
+// redeploy trigger - reverted to full middleware require (destructuring caused persistent TypeError) 1775973094
+// redeploy trigger - wrapped cors in explicit middleware function to fix app.use TypeError 1775973117
+// redeploy trigger - final middleware.cors fix (reverted wrapper) 1775973690
+// redeploy trigger - exported cors from middleware to fix TypeError on /api/auth/connect
+// redeploy trigger - dual mount apiRouter for direct CF URL + hosting domain (fixes 404 on direct CF /auth/connect) 1775930824

@@ -22,7 +22,8 @@ What you can help with:
 - Vendor names and IDs from the QuickBooks vendor list
 - Item names and IDs from the QuickBooks item list
 - Recent system logs and error history
-- Guidance on how to use the platform features
+- Active business rules: SKU mappings, pricing discounts, naming rules, and unit conversions
+- Guidance on how to use the platform features including the business rules engine
 
 What you cannot do:
 - Access real-time QBO data outside of what is provided in the context
@@ -34,7 +35,7 @@ What you cannot do:
 // detectDataNeeds
 // Analyzes the user message with keyword matching to determine what Firestore
 // or cache data should be fetched before answering.
-// Returns an array of data type strings: 'recent_pos', 'vendors', 'items', 'logs'
+// Returns an array of data type strings: 'recent_pos', 'vendors', 'items', 'logs', 'rules'
 // ---------------------------------------------------------------------------
 
 function detectDataNeeds(message) {
@@ -59,6 +60,11 @@ function detectDataNeeds(message) {
   // Log / activity / error related
   if (/\b(log|error|activity|history|recent|last|status|failed|fail|success|pushed)\b/.test(lower)) {
     needs.add('logs');
+  }
+
+  // Business rules related
+  if (/\b(rule|rules|mapping|discount|pricing|conversion|sku\s*map|unit\s*convert|naming\s*rule|business\s*rule)\b/.test(lower)) {
+    needs.add('rules');
   }
 
   return [...needs];
@@ -107,6 +113,38 @@ function enrichWithData(message, data) {
       return `  - [${date}] ${entry.module} / ${entry.action}: ${entry.status}${entry.details?.error ? ' - ' + entry.details.error : ''}`;
     });
     sections.push(`Recent System Logs (last 20):\n${logLines.join('\n')}`);
+  }
+
+  if (data.rules && data.rules.length > 0) {
+    const ruleTypeLabels = {
+      SKU_MAPPING: 'SKU Mapping',
+      PRICING: 'Pricing Discount',
+      NAMING: 'Naming Rule',
+      UNIT_CONVERSION: 'Unit Conversion',
+    };
+    const ruleLines = data.rules.map((r) => {
+      const typeLabel = ruleTypeLabels[r.type] || r.type;
+      const detail = r.rule || {};
+      let desc = '';
+      switch (r.type) {
+        case 'SKU_MAPPING':
+          desc = `ATD SKU "${detail.atd_sku}" -> Vendor SKU "${detail.vendor_sku}"`;
+          break;
+        case 'PRICING':
+          desc = `${detail.discount_percent}% discount${detail.start_date ? ` from ${detail.start_date}` : ''}${detail.end_date ? ` to ${detail.end_date}` : ''}`;
+          break;
+        case 'NAMING':
+          desc = `ATD name "${detail.atd_name}" -> Vendor name "${detail.vendor_name}"`;
+          break;
+        case 'UNIT_CONVERSION':
+          desc = `${detail.atd_unit} -> ${detail.vendor_unit} (factor: ${detail.conversion_factor})`;
+          break;
+        default:
+          desc = JSON.stringify(detail);
+      }
+      return `  - [${typeLabel}] Vendor: ${r.vendor} | ${desc}${r.active === false ? ' (INACTIVE)' : ''}`;
+    });
+    sections.push(`Active Business Rules (${data.rules.length} total):\n${ruleLines.join('\n')}`);
   }
 
   if (sections.length === 0) {

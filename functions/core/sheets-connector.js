@@ -89,7 +89,7 @@ async function readSheetData(sheetId, tabName, headerRow = 1, dataStartRow = 2) 
     .map((row, rowIndex) => {
       const obj = { _rowIndex: dataStartIndex + rowIndex + 1 };
       for (let i = 0; i < uniqueHeaders.length; i++) {
-        obj[keys[i]] = (row[i] || '').trim();
+        obj[uniqueHeaders[i]] = (row[i] || '').trim();
       }
       return obj;
     });

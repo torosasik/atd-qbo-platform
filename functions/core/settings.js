@@ -58,7 +58,7 @@ const DEFAULT_SETTINGS = {
     ollama_model: 'qwen3.5-coder-35b:latest',
     ollama_url: 'http://localhost:11434',
     claude_model: 'claude-sonnet-4-20250514',
-    ollama_enabled: true,
+    ollama_enabled: false,
     preferred_provider: 'auto', // 'auto', 'ollama-only', 'claude-only'
   },
   qbo: {

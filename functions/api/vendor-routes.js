@@ -191,4 +191,26 @@ router.post('/mappings/sync', async (req, res, next) => {
   }
 });
 
+// GET /mappings/active — returns only active & visible vendors (for PO/Bill dropdowns)
+router.get('/mappings/active', async (req, res, next) => {
+  try {
+    const db = getFirestore();
+    const docSnap = await db.doc(VENDOR_MAPPINGS_DOC).get();
+    const data = docSnap.exists ? docSnap.data() : null;
+    const vendors = data ? (data.vendors || []) : [];
+
+    const activeVendors = vendors
+      .filter((v) => v.active && v.visible !== false)
+      .map((v) => ({
+        Id: v.qbo_id,
+        DisplayName: v.qbo_name,
+        shopify_code: v.shopify_code || '',
+      }));
+
+    sendSuccess(res, { vendors: activeVendors });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
