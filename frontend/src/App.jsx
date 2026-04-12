@@ -18,6 +18,7 @@ const Payments = lazy(() => import('./pages/Payments'));
 const Expenses = lazy(() => import('./pages/Expenses'));
 const ActivityLog = lazy(() => import('./pages/ActivityLog'));
 const Orders = lazy(() => import('./pages/Orders'));
+const Rules = lazy(() => import('./pages/Rules'));
 
 // Loading fallback component
 function PageLoader() {
@@ -91,6 +92,7 @@ export default function App() {
               <Route path="/vendor-management" element={<VendorManagement />} />
               <Route path="/health" element={<HealthCheck />} />
               <Route path="/activity-log" element={<ActivityLog />} />
+              <Route path="/rules" element={<Rules />} />
               <Route path="/help" element={<Help />} />
               {/* Catch-all: redirect unknown paths to Dashboard */}
               <Route path="*" element={<Navigate to="/" replace />} />

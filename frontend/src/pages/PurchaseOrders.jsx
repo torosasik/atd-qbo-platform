@@ -1668,7 +1668,7 @@ export default function PurchaseOrders({ initialTab }) {
         setCache('vendorMappings', mappingsRes);
         const allVendors = mappingsRes.mappings?.vendors || [];
         activeVendors = allVendors
-          .filter((v) => v.active)
+          .filter((v) => v.active && v.visible !== false)
           .map((v) => ({ Id: v.qbo_id, DisplayName: v.qbo_name }));
         setCache('vendors', activeVendors);
       }

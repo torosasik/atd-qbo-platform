@@ -3,7 +3,8 @@
 const express = require('express');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getOAuthUrl, handleCallback, QBO_TOKENS_DOC } = require('../core/google-auth');
-const { refreshAccessToken, logAction } = require('../core/qbo-auth');
+const { refreshAccessToken } = require('../core/qbo-auth');
+const { logAction } = require('../core/logger');
 const { sendSuccess } = require('./middleware');
 
 const router = express.Router();

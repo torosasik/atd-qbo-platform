@@ -7,6 +7,7 @@ const { getValidAccessToken, getRealmId, getQboBaseUrl } = require('../../core/q
 const { getCachedVendors, getCachedItems } = require('../../core/cache');
 const { askAI } = require('../../core/ai-router');
 const { buildValidationPrompt } = require('./prompts');
+const { applyRules } = require('../../api/rules-engine');
 
 // Base URL resolved dynamically from settings (production vs sandbox)
 
@@ -305,6 +306,10 @@ async function handleCreate(req, res) {
   try {
     const realmId = await getRealmId();
     const data = req.body;
+
+    if (Array.isArray(data.lines) && data.vendorName) {
+      data.lines = await applyRules(data.lines, data.vendorName);
+    }
 
     // Normalize frontend payload: accept both new and legacy field names
     if (data.date && !data.txnDate) {

@@ -141,4 +141,17 @@ export const api = {
     return api.get(`/activity-log${query ? `?${query}` : ''}`);
   },
   postActivityLog: (body) => api.post('/activity-log', body),
+
+  // Business Rules
+  getRules: (params = {}) => {
+    const qs = new URLSearchParams();
+    if (params.vendor) qs.set('vendor', params.vendor);
+    if (params.type) qs.set('type', params.type);
+    if (params.active != null) qs.set('active', String(params.active));
+    const query = qs.toString();
+    return api.get(`/rules${query ? `?${query}` : ''}`);
+  },
+  createRule: (body) => api.post('/rules', body),
+  updateRule: (id, body) => api.put(`/rules/${id}`, body),
+  deleteRule: (id) => api.del(`/rules/${id}`),
 };

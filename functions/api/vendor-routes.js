@@ -31,6 +31,7 @@ router.get('/mappings', async (req, res, next) => {
             qbo_name: qv.DisplayName || qv.CompanyName || '',
             active: false,
             shopify_code: '',
+            visible: true,
           }));
 
           await db.doc(VENDOR_MAPPINGS_DOC).set({
@@ -82,6 +83,7 @@ router.put('/mappings', validateRequest(schemas.vendorMappings), async (req, res
       qbo_name: String(v.qbo_name || ''),
       active: Boolean(v.active),
       shopify_code: String(v.shopify_code || ''),
+      visible: v.visible !== false,
     }));
 
     const db = getFirestore();
@@ -143,6 +145,7 @@ router.post('/mappings/sync', async (req, res, next) => {
           qbo_name: name,
           active: existing.active,
           shopify_code: existing.shopify_code,
+          visible: existing.visible !== false,
         };
       }
       return {
@@ -150,6 +153,7 @@ router.post('/mappings/sync', async (req, res, next) => {
         qbo_name: name,
         active: false,
         shopify_code: '',
+        visible: true,
       };
     });
 

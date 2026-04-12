@@ -1453,7 +1453,7 @@ export default function Bills({ initialTab }) {
       // Active vendors for dropdown (from mappings)
       const allVendors = mappingsRes.mappings?.vendors || [];
       const activeVendors = allVendors
-        .filter((v) => v.active)
+        .filter((v) => v.active && v.visible !== false)
         .map((v) => ({ Id: v.qbo_id, DisplayName: v.qbo_name }));
       setCache('vendors', activeVendors);
       setCache('vendorMappings', mappingsRes);

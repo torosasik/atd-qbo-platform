@@ -15,6 +15,7 @@ import { api } from '../utils/api';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import Toast from '../components/shared/Toast';
 import Toggle from '../components/shared/Toggle';
+import FuzzySearch from '../components/FuzzySearch';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -166,6 +167,13 @@ export default function Orders() {
   const [colDropdownOpen, setColDropdownOpen] = useState(false);
   const [poDropdownOpen, setPoDropdownOpen] = useState(false);
   const [visibleCols, setVisibleCols] = useState(null); // null = not yet loaded
+  const [searchState, setSearchState] = useState({
+    indexes: null,
+    resultCount: 0,
+    hasClosestMatches: false,
+    hasNoResults: false,
+    query: '',
+  });
 
   // Derived header keys for special columns
   const orderNumHeader = useMemo(() => findHeaderKey(headers, ['Order #', 'Order Number']), [headers]);
@@ -233,8 +241,8 @@ export default function Orders() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Filtered + sorted rows
-  const displayRows = useMemo(() => {
+  // Filtered + sorted rows (before fuzzy search)
+  const baseRows = useMemo(() => {
     let result = rows;
 
     if (!showFulfilled) {
@@ -258,6 +266,27 @@ export default function Orders() {
 
     return result;
   }, [rows, statuses, showFulfilled, sortKey, sortDir, orderNumHeader, lineItemHeader]);
+
+  const searchableRows = useMemo(() => {
+    return baseRows.map((row) => ({
+      row,
+      productName: String(itemNameHeader ? row[itemNameHeader] ?? '' : ''),
+      sku: String(skuHeader ? row[skuHeader] ?? '' : ''),
+      orderNumber: String(orderNumHeader ? row[orderNumHeader] ?? '' : ''),
+      vendorName: String(
+        findHeaderKey(headers, ['Vendor', 'Vendor Name', 'Supplier'])
+          ? row[findHeaderKey(headers, ['Vendor', 'Vendor Name', 'Supplier'])] ?? ''
+          : ''
+      ),
+    }));
+  }, [baseRows, headers, itemNameHeader, skuHeader, orderNumHeader]);
+
+  const displayRows = useMemo(() => {
+    if (!searchState.indexes) return baseRows;
+    return searchState.indexes
+      .map((idx) => searchableRows[idx]?.row)
+      .filter(Boolean);
+  }, [baseRows, searchableRows, searchState]);
 
   function handleSort(header) {
     if (sortKey === header) {
@@ -381,7 +410,13 @@ export default function Orders() {
       )}
 
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-start gap-3">
+        <FuzzySearch
+          items={searchableRows}
+          totalCount={baseRows.length}
+          onResultsChange={setSearchState}
+        />
+
         {/* Show Fulfilled toggle */}
         <Toggle
           id="show-fulfilled"
