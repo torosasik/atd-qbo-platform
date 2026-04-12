@@ -92,13 +92,14 @@ router.get('/', async (req, res) => {
           };
           errors.push(`QBO access token expired ${agoText}. Click Refresh Token on the QBO Connect page.`);
         } else if (!isExpired) {
+          let timer;
           try {
             const accessToken = await ensureValidToken();
             const baseUrl = await getQboBaseUrl();
             const realmId = data.realmId;
 
             const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 5000);
+            timer = setTimeout(() => controller.abort(), 5000);
             const qboRes = await fetch(
               `${baseUrl}/v3/company/${realmId}/companyinfo/${realmId}`,
               {

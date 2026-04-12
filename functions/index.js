@@ -126,21 +126,3 @@ app.use(async (err, req, res, next) => {
 });
 
 exports.api = functions.https.onRequest(app);
-// force redeploy 1775970374
-// redeploy trigger - oauth redirect_uri and health route fixed 1775970916
-// redeploy trigger - fixed health route mounting 1775971611
-// redeploy trigger - health route now uses /health in router 1775971719
-// redeploy trigger - fixed /auth route order before catch-all '/' (404 on /auth/connect) 1775972608
-// redeploy trigger - reordered routes so /auth comes BEFORE all catch-all '/' middleware (fixes 404 on /auth/connect) 1775972741
-// redeploy trigger - added top-level CORS middleware for direct CF calls to /api/auth/connect from QBOConnect.jsx 1775972841
-// redeploy trigger - fixed require for middleware.cors (was causing deployment error) 1775972863
-// redeploy trigger - fixed middleware destructuring for cors (TypeError on app.use) 1775972889
-// redeploy trigger - fixed middleware require to use full object (cors is not default export) 1775972915
-// redeploy trigger - wrapped middleware.cors in arrow function to satisfy app.use() expectation 1775972938
-// redeploy trigger - reverted to direct middleware.cors (previous wrapper caused 500) 1775973045
-// redeploy trigger - switched to destructuring { cors } from middleware (final fix for app.use) 1775973072
-// redeploy trigger - reverted to full middleware require (destructuring caused persistent TypeError) 1775973094
-// redeploy trigger - wrapped cors in explicit middleware function to fix app.use TypeError 1775973117
-// redeploy trigger - final middleware.cors fix (reverted wrapper) 1775973690
-// redeploy trigger - exported cors from middleware to fix TypeError on /api/auth/connect
-// redeploy trigger - dual mount apiRouter for direct CF URL + hosting domain (fixes 404 on direct CF /auth/connect) 1775930824
