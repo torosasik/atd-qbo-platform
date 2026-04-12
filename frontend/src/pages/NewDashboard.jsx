@@ -21,6 +21,7 @@ import {
   Receipt,
   CreditCard,
   Wallet,
+  Lock,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
