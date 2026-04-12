@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ShoppingCart,
   FileText,
-  History,
+  History as HistoryIcon,
   Settings,
   Link2,
   Tags,
@@ -21,7 +21,7 @@ import {
   Receipt,
   CreditCard,
   Wallet,
-  Lock,
+  Lock as LockIcon,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
@@ -78,7 +78,7 @@ function DashboardBox({ icon: Icon, title, description, count, onClick, loading,
       {disabled && (
         <div className="absolute inset-0 bg-white/55 flex items-center justify-center rounded-xl z-10">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gray-900 text-white text-xs font-semibold shadow-sm">
-            <Lock className="h-3.5 w-3.5" />
+            <LockIcon className="h-3.5 w-3.5" />
             {badge || 'Coming Soon'}
           </div>
         </div>
@@ -198,7 +198,7 @@ export default function Dashboard() {
     },
     {
       id: 'history',
-      icon: History,
+      icon: HistoryIcon,
       title: 'History',
       description: 'See all purchase orders that have been pushed to QuickBooks with their status and details.',
       accentColor: 'bg-purple-500',

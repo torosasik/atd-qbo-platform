@@ -353,17 +353,6 @@ function CreateNewItemModal({ isOpen, onClose, onSuccess, initialName }) {
     }
   }
 
-  function handleSaveAsDraft() {
-    setField('autoApprove', false);
-    handleSubmit({ preventDefault: () => {} });
-  }
-
-  function handleClearForm() {
-    if (!window.confirm('Clear this form and reset all fields to defaults?')) return;
-    resetForm();
-    setResult(null);
-  }
-
   if (!isOpen) return null;
 
   return (
@@ -524,6 +513,17 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
     });
     setVendorSearch('');
     setVendorOpen(false);
+  }
+
+  function handleSaveAsDraft() {
+    setField('autoApprove', false);
+    handleSubmit({ preventDefault: () => {} });
+  }
+
+  function handleClearForm() {
+    if (!window.confirm('Clear this form and reset all fields to defaults?')) return;
+    resetForm();
+    setResult(null);
   }
 
   const filteredVendors = useMemo(() => {

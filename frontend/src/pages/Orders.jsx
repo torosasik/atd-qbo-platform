@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   RefreshCw,
-  Clipboard,
+  Clipboard as ClipboardIcon,
   Check,
   ChevronUp,
   ChevronDown,
@@ -87,7 +87,7 @@ function CopyCell({ value }) {
         className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-atd-blue flex-shrink-0"
         title="Copy"
       >
-        {copied ? <Check className="h-3 w-3 text-green-500" /> : <Clipboard className="h-3 w-3" />}
+        {copied ? <Check className="h-3 w-3 text-green-500" /> : <ClipboardIcon className="h-3 w-3" />}
       </button>
     </span>
   );

@@ -6,14 +6,38 @@ async function request(path, options = {}) {
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
   });
+  let rawText = '';
   let data;
-  try {
-    data = await res.json();
-  } catch (parseErr) {
-    // Capture raw response text for better debugging when JSON parse fails (e.g. HTML error page from proxy)
-    const rawText = await res.text().catch(() => 'Unable to read response body');
-    data = { error: `JSON parse failed: ${parseErr.message}`, raw: rawText };
+  let parseErr = null;
+
+  if (typeof res.text === 'function') {
+    rawText = await res.text();
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch (err) {
+      parseErr = err;
+      data = { error: `JSON parse failed: ${err.message}`, raw: rawText };
+    }
+  } else if (typeof res.json === 'function') {
+    try {
+      data = await res.json();
+    } catch (err) {
+      parseErr = err;
+      data = { error: `JSON parse failed: ${err.message}`, raw: 'Unable to read response body' };
+    }
+  } else {
+    data = {};
   }
+
+  if (parseErr) {
+    const err = new Error(data.error);
+    err.status = res.status;
+    err.code = null;
+    err.fix = 'Ensure API routes are deployed and returning JSON, not HTML.';
+    err.data = data;
+    throw err;
+  }
+
   if (!res.ok) {
     const err = new Error(data.error || `Request failed: ${res.status}`);
     err.status = res.status;
