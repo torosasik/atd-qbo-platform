@@ -20,6 +20,7 @@ const authRoutes = require('./api/auth-routes');
 const vendorRoutes = require('./api/vendor-routes');
 const healthRoutes = require('./api/health-routes');
 const activityLogRoutes = require('./api/activity-log');
+const orderStatusRoutes = require('./api/order-status-routes');
 
 const { logAction } = require('./core/logger');
 
@@ -59,6 +60,7 @@ apiRouter.use('/auth', authRoutes);
 apiRouter.use('/vendor', vendorRoutes);
 apiRouter.use('/', healthRoutes); // health
 apiRouter.use('/activity-log', activityLogRoutes);
+apiRouter.use('/order-statuses', orderStatusRoutes);
 
 app.use('/api', apiRouter);
 

@@ -121,6 +121,13 @@ export const api = {
   // Health
   getHealth: () => api.get('/health'),
 
+  // Orders (Google Sheets)
+  getOrders: () => api.get('/sheets/orders'),
+  getOrderStatuses: () => api.get('/order-statuses'),
+  setOrderStatus: (orderNumber, lineItem, status) =>
+    api.put(`/order-statuses/${encodeURIComponent(orderNumber)}${lineItem ? `/${encodeURIComponent(lineItem)}` : ''}`, { status }),
+  bulkSetOrderStatuses: (updates) => api.put('/order-statuses/bulk', { updates }),
+
   // Activity Log
   getActivityLogs: (params = {}) => {
     const qs = new URLSearchParams();

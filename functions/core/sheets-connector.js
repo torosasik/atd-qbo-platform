@@ -13,14 +13,18 @@
 const { google } = require('googleapis');
 const { logAction } = require('./logger');
 
-// Column letter (A, B, ..., Z, AA, AB, ..., AI) to zero-based index
-function colLetterToIndex(letters) {
-  const s = letters.toUpperCase();
-  let index = 0;
-  for (let i = 0; i < s.length; i++) {
-    index = index * 26 + (s.charCodeAt(i) - 64);
-  }
-  return index - 1; // zero-based
+function normalizeHeader(value) {
+  return String(value || '').trim();
+}
+
+function buildHeaderKey(header, index) {
+  const normalized = String(header || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+
+  return normalized || `column_${index + 1}`;
 }
 
 /**
@@ -37,18 +41,18 @@ async function getSheetsClient() {
 }
 
 /**
- * Read data from a Google Sheet and return an array of row objects.
+ * Read data from a Google Sheet and return headers + row objects.
  *
  * @param {string} sheetId - The Google Sheets spreadsheet ID.
  * @param {string} tabName - The sheet tab name (e.g. 'Sheet1').
- * @param {Object} columnMapping - Maps field names to column letters,
- *   e.g. { vendorName: 'A', itemDescription: 'B', quantity: 'C', ... }
- * @returns {Promise<Array<Object>>} Parsed row objects. Row 1 (header) is skipped.
+ * @param {number} [headerRow=1] - Header row number (1-based).
+ * @param {number} [dataStartRow=2] - Data start row number (1-based).
+ * @returns {Promise<{headers: string[], rows: Object[]}>}
  */
-async function readSheetData(sheetId, tabName, columnMapping) {
+async function readSheetData(sheetId, tabName, headerRow = 1, dataStartRow = 2) {
   const sheets = await getSheetsClient();
 
-  const range = `${tabName}!A:AI`;
+  const range = `${tabName}!A:ZZ`;
   let response;
   try {
     response = await sheets.spreadsheets.values.get({
@@ -65,16 +69,27 @@ async function readSheetData(sheetId, tabName, columnMapping) {
   }
 
   const rawRows = response.data.values || [];
-  // Skip header row (index 0), parse remaining rows
-  const dataRows = rawRows.slice(1);
+  const headerIndex = Math.max(1, Number(headerRow) || 1) - 1;
+  const dataStartIndex = Math.max(1, Number(dataStartRow) || 2) - 1;
+  const headerCells = rawRows[headerIndex] || [];
 
-  const rows = dataRows
+  const headers = headerCells
+    .map((value) => normalizeHeader(value))
+    .filter((value) => value.length > 0);
+
+  const uniqueHeaders = headers.map((header, index, arr) => {
+    const firstIndex = arr.indexOf(header);
+    return firstIndex === index ? header : `${header}_${index + 1}`;
+  });
+  const keys = uniqueHeaders.map((header, index) => buildHeaderKey(header, index));
+
+  const rows = rawRows
+    .slice(dataStartIndex)
     .filter((row) => row.some((cell) => (cell || '').trim() !== ''))
     .map((row, rowIndex) => {
-      const obj = { _rowIndex: rowIndex + 2 }; // 1-based sheet row (header = 1)
-      for (const [field, colLetter] of Object.entries(columnMapping)) {
-        const idx = colLetterToIndex(colLetter);
-        obj[field] = (row[idx] || '').trim();
+      const obj = { _rowIndex: dataStartIndex + rowIndex + 1 };
+      for (let i = 0; i < uniqueHeaders.length; i++) {
+        obj[keys[i]] = (row[i] || '').trim();
       }
       return obj;
     });
@@ -85,7 +100,7 @@ async function readSheetData(sheetId, tabName, columnMapping) {
     rowCount: rows.length,
   });
 
-  return rows;
+  return { headers: uniqueHeaders, rows };
 }
 
 /**

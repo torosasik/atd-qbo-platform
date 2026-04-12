@@ -17,6 +17,7 @@ const Bills = lazy(() => import('./pages/Bills'));
 const Payments = lazy(() => import('./pages/Payments'));
 const Expenses = lazy(() => import('./pages/Expenses'));
 const ActivityLog = lazy(() => import('./pages/ActivityLog'));
+const Orders = lazy(() => import('./pages/Orders'));
 
 // Loading fallback component
 function PageLoader() {
@@ -78,6 +79,7 @@ export default function App() {
             {/* AppLayout wraps all routes that should show the sidebar */}
             <Route element={<AppLayout />}>
               <Route path="/" element={<NewDashboard />} />
+              <Route path="/orders" element={<Orders />} />
               <Route path="/purchase-orders" element={<PurchaseOrders />} />
               <Route path="/invoices" element={<Invoices />} />
               <Route path="/bills" element={<Bills />} />

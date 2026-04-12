@@ -19,6 +19,7 @@ import {
   HelpCircle,
   Tags,
   ClipboardList,
+  ListOrdered,
 } from 'lucide-react';
 
 // Each item can optionally have a `featureKey` — if present, the link is
@@ -26,6 +27,7 @@ import {
 // always visible (core platform pages).
 const mainNavItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/orders', label: 'Orders', icon: ListOrdered, featureKey: 'sheets_import' },
   { to: '/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart, featureKey: 'purchase_orders' },
   { to: '/invoices', label: 'Invoices', icon: FileText, featureKey: 'invoices' },
   { to: '/bills', label: 'Bills', icon: Receipt, featureKey: 'bills' },

@@ -8,6 +8,66 @@ const { sendSuccess } = require('./middleware');
 
 const router = express.Router();
 
+const ORDERS_CACHE_DOC = 'cache/sheets_orders';
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+function normalizeComparable(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function findColumnKey(row = {}, candidates = []) {
+  const entries = Object.keys(row).map((key) => ({ key, comparable: normalizeComparable(row[key]) }));
+  for (const candidate of candidates) {
+    const target = normalizeComparable(candidate);
+    const match = entries.find((entry) => entry.comparable === target);
+    if (match) return match.key;
+  }
+  return null;
+}
+
+function mapRowsForPoGrouping(rows = []) {
+  return rows.map((row) => {
+    const orderKey = findColumnKey(row, ['Order #', 'Order Number']);
+    const lineItemKey = findColumnKey(row, ['Line Item #', 'Line Item']);
+    const customerNameKey = findColumnKey(row, ['Customer', 'Customer Name']);
+    const customerEmailKey = findColumnKey(row, ['Email', 'Customer Email']);
+    const vendorNameKey = findColumnKey(row, ['Vendor', 'Vendor Name']);
+    const dateKey = findColumnKey(row, ['Date']);
+    const statusKey = findColumnKey(row, ['Status']);
+    const orderTotalKey = findColumnKey(row, ['Order Total']);
+    const quantityKey = findColumnKey(row, ['Qty', 'Quantity']);
+    const unitPriceKey = findColumnKey(row, ['Price', 'Unit Price']);
+    const subtotalKey = findColumnKey(row, ['Subtotal']);
+    const itemDescriptionKey = findColumnKey(row, ['Item Name', 'Item Description']);
+    const requiredSizeKey = findColumnKey(row, ['Required Size']);
+    const unitKey = findColumnKey(row, ['Unit']);
+    const tilesPerBoxKey = findColumnKey(row, ['Tiles Per Box']);
+    const tileSizeCoverageKey = findColumnKey(row, ['Tile Size / Coverage']);
+    const boxAreaCoverageKey = findColumnKey(row, ['Box Area / Coverage']);
+
+    return {
+      ...row,
+      orderNumber: orderKey ? row[orderKey] : '',
+      lineItem: lineItemKey ? row[lineItemKey] : '',
+      customerName: customerNameKey ? row[customerNameKey] : '',
+      customerEmail: customerEmailKey ? row[customerEmailKey] : '',
+      vendorName: vendorNameKey ? row[vendorNameKey] : '',
+      date: dateKey ? row[dateKey] : '',
+      status: statusKey ? row[statusKey] : '',
+      orderTotal: orderTotalKey ? row[orderTotalKey] : '',
+      quantity: quantityKey ? row[quantityKey] : '',
+      unitPrice: unitPriceKey ? row[unitPriceKey] : '',
+      subtotal: subtotalKey ? row[subtotalKey] : '',
+      itemDescription: itemDescriptionKey ? row[itemDescriptionKey] : '',
+      requiredSize: requiredSizeKey ? row[requiredSizeKey] : '',
+      unit: unitKey ? row[unitKey] : '',
+      tilesPerBox: tilesPerBoxKey ? row[tilesPerBoxKey] : '',
+      tileSizeCoverage: tileSizeCoverageKey ? row[tileSizeCoverageKey] : '',
+      boxAreaCoverage: boxAreaCoverageKey ? row[boxAreaCoverageKey] : '',
+    };
+  });
+}
+
 // GET /sheets/test-connection
 router.get('/test-connection', async (req, res, next) => {
   try {
@@ -29,7 +89,12 @@ router.get('/test-connection', async (req, res, next) => {
 router.get('/preview', async (req, res, next) => {
   try {
     const settings = await getSettings();
-    const { po_sheet_id: sheetId, po_sheet_tab: tabName, po_column_mapping: columnMapping } = settings.google_sheets;
+    const {
+      po_sheet_id: sheetId,
+      po_sheet_tab: tabName,
+      header_row: headerRow,
+      data_start_row: dataStartRow,
+    } = settings.google_sheets;
 
     if (!sheetId) {
       const error = new Error('po_sheet_id is not configured in settings');
@@ -37,11 +102,60 @@ router.get('/preview', async (req, res, next) => {
       return next(error);
     }
 
-    const rows = await readSheetData(sheetId, tabName, columnMapping);
-    const groupKey = Object.keys(columnMapping).find((k) => k === 'orderNumber') ? 'orderNumber' : null;
-    const pos = groupKey ? groupByPO(rows, groupKey) : [];
+    const { headers, rows } = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
+    const mappedRows = mapRowsForPoGrouping(rows);
+    const pos = groupByPO(mappedRows, 'orderNumber');
 
-    sendSuccess(res, { rows, pos });
+    sendSuccess(res, { headers, rows, pos });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /sheets/orders
+router.get('/orders', async (req, res, next) => {
+  try {
+    const db = getFirestore();
+    const cacheRef = db.doc(ORDERS_CACHE_DOC);
+    const cacheSnap = await cacheRef.get();
+    const now = Date.now();
+
+    if (cacheSnap.exists) {
+      const cache = cacheSnap.data() || {};
+      const cachedAtMs = cache.cachedAtMs || 0;
+      if (cachedAtMs > 0 && now - cachedAtMs < CACHE_TTL_MS) {
+        sendSuccess(res, { headers: cache.headers || [], rows: cache.rows || [] });
+        return;
+      }
+    }
+
+    const settings = await getSettings();
+    const {
+      po_sheet_id: sheetId,
+      po_sheet_tab: tabName,
+      header_row: headerRow,
+      data_start_row: dataStartRow,
+    } = settings.google_sheets;
+
+    if (!sheetId) {
+      const error = new Error('po_sheet_id is not configured in settings');
+      error.status = 400;
+      return next(error);
+    }
+
+    const { headers, rows } = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
+
+    await cacheRef.set(
+      {
+        headers,
+        rows,
+        cachedAtMs: now,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    sendSuccess(res, { headers, rows });
   } catch (err) {
     next(err);
   }
@@ -51,7 +165,12 @@ router.get('/preview', async (req, res, next) => {
 router.post('/import', async (req, res, next) => {
   try {
     const settings = await getSettings();
-    const { po_sheet_id: sheetId, po_sheet_tab: tabName, po_column_mapping: columnMapping } = settings.google_sheets;
+    const {
+      po_sheet_id: sheetId,
+      po_sheet_tab: tabName,
+      header_row: headerRow,
+      data_start_row: dataStartRow,
+    } = settings.google_sheets;
 
     if (!sheetId) {
       const error = new Error('po_sheet_id is not configured in settings');
@@ -59,8 +178,9 @@ router.post('/import', async (req, res, next) => {
       return next(error);
     }
 
-    const rows = await readSheetData(sheetId, tabName, columnMapping);
-    const pos = groupByPO(rows, 'orderNumber');
+    const { rows } = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
+    const mappedRows = mapRowsForPoGrouping(rows);
+    const pos = groupByPO(mappedRows, 'orderNumber');
 
     if (pos.length === 0) {
       sendSuccess(res, { imported: 0 }, 'No PO groups found in sheet');
