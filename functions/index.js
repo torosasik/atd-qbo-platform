@@ -66,6 +66,16 @@ apiRouter.use('/rules', rulesRoutes);
 
 app.use('/api', apiRouter);
 
+// 404 handler - must come before global error handler to return JSON instead of HTML
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'Not Found',
+    path: req.path,
+    fix: 'Check the API route or contact support.'
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Global error handler
 // Catches any unhandled error thrown (or passed via next(err)) in a route,
