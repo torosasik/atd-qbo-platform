@@ -19,6 +19,7 @@ const sheetsRoutes = require('./api/sheets-routes');
 const authRoutes = require('./api/auth-routes');
 const vendorRoutes = require('./api/vendor-routes');
 const healthRoutes = require('./api/health-routes');
+const activityLogRoutes = require('./api/activity-log');
 
 const { logAction } = require('./core/logger');
 
@@ -57,6 +58,7 @@ apiRouter.use('/', sheetsRoutes); // sheets/test-connection, sheets/preview, she
 apiRouter.use('/auth', authRoutes);
 apiRouter.use('/vendor', vendorRoutes);
 apiRouter.use('/', healthRoutes); // health
+apiRouter.use('/activity-log', activityLogRoutes);
 
 app.use('/api', apiRouter);
 

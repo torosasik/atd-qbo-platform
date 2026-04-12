@@ -3,6 +3,7 @@
 const express = require('express');
 const { getSettings, updateSettings } = require('../core/settings');
 const { validateRequest, sendError, sendSuccess, schemas } = require('./middleware');
+const { logActivity } = require('./activity-logger');
 
 const router = express.Router();
 
@@ -25,6 +26,7 @@ router.put('/', validateRequest(schemas.settingsUpdate), async (req, res, next) 
       return next(error);
     }
     const updated = await updateSettings(req.body);
+    await logActivity('SETTINGS_CHANGE', 'settings-update', 'Settings updated', { keys: Object.keys(req.body) });
     sendSuccess(res, { settings: updated });
   } catch (err) {
     next(err);

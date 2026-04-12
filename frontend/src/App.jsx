@@ -16,6 +16,7 @@ const Invoices = lazy(() => import('./pages/Invoices'));
 const Bills = lazy(() => import('./pages/Bills'));
 const Payments = lazy(() => import('./pages/Payments'));
 const Expenses = lazy(() => import('./pages/Expenses'));
+const ActivityLog = lazy(() => import('./pages/ActivityLog'));
 
 // Loading fallback component
 function PageLoader() {
@@ -38,7 +39,8 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    console.error('Route error:', error, errorInfo);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('Route error:', errorMessage, errorInfo);
   }
 
   render() {
@@ -48,6 +50,11 @@ class ErrorBoundary extends React.Component {
           <div>
             <h2 className="text-lg font-semibold text-red-600 mb-2">Something went wrong</h2>
             <p className="text-gray-500 mb-4">Failed to load this page. Please try refreshing.</p>
+            {this.state.error && (
+              <p className="text-xs text-gray-400 mb-4 font-mono break-all">
+                {this.state.error instanceof Error ? this.state.error.message : String(this.state.error)}
+              </p>
+            )}
             <button
               onClick={() => window.location.reload()}
               className="px-4 py-2 bg-atd-blue text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -81,6 +88,7 @@ export default function App() {
               <Route path="/settings" element={<Settings />} />
               <Route path="/vendor-management" element={<VendorManagement />} />
               <Route path="/health" element={<HealthCheck />} />
+              <Route path="/activity-log" element={<ActivityLog />} />
               <Route path="/help" element={<Help />} />
               {/* Catch-all: redirect unknown paths to Dashboard */}
               <Route path="*" element={<Navigate to="/" replace />} />

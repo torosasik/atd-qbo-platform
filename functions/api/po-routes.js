@@ -6,6 +6,7 @@ const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { handleCreate, handleApproveDraft } = require('../modules/purchase-order/index');
 const { ensureValidToken } = require('../core/qbo-auth');
 const { logAction } = require('../core/logger');
+const { logActivity } = require('./activity-logger');
 const { validateRequest, sendError, sendSuccess, retryOperation, schemas } = require('./middleware');
 
 const router = express.Router();
@@ -14,6 +15,7 @@ const router = express.Router();
 router.post('/create', validateRequest(schemas.poCreate), async (req, res, next) => {
   try {
     await ensureValidToken();
+    await logActivity('PO_CREATED', 'po-create', `PO create requested for vendor: ${req.body.vendorName || 'unknown'}`, { vendorName: req.body.vendorName });
     await retryOperation(() => handleCreate(req, res), 3, 1000);
   } catch (err) {
     next(err);
@@ -24,6 +26,7 @@ router.post('/create', validateRequest(schemas.poCreate), async (req, res, next)
 router.post('/approve/:draftId', async (req, res, next) => {
   try {
     await ensureValidToken();
+    await logActivity('PO_UPDATED', 'po-approve', `PO draft approved: ${req.params.draftId}`, { draftId: req.params.draftId });
     await retryOperation(() => handleApproveDraft(req, res), 3, 1000);
   } catch (err) {
     next(err);

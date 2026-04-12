@@ -18,6 +18,7 @@ import {
   Activity,
   HelpCircle,
   Tags,
+  ClipboardList,
 } from 'lucide-react';
 
 // Each item can optionally have a `featureKey` — if present, the link is
@@ -34,6 +35,7 @@ const mainNavItems = [
   { to: '/qbo-connect', label: 'QBO Connect', icon: Link2 },
   { to: '/settings', label: 'Settings', icon: Settings },
   { to: '/vendor-management', label: 'Vendor Mapping', icon: Tags, featureKey: 'vendor_management' },
+  { to: '/activity-log', label: 'Activity Log', icon: ClipboardList },
   { to: '/health', label: 'System Health', icon: Activity },
   { to: '/help', label: 'Help & Docs', icon: HelpCircle },
 ];

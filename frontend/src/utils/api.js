@@ -120,4 +120,18 @@ export const api = {
 
   // Health
   getHealth: () => api.get('/health'),
+
+  // Activity Log
+  getActivityLogs: (params = {}) => {
+    const qs = new URLSearchParams();
+    if (params.type) qs.set('type', params.type);
+    if (params.startDate) qs.set('startDate', params.startDate);
+    if (params.endDate) qs.set('endDate', params.endDate);
+    if (params.search) qs.set('search', params.search);
+    if (params.limit != null) qs.set('limit', String(params.limit));
+    if (params.offset != null) qs.set('offset', String(params.offset));
+    const query = qs.toString();
+    return api.get(`/activity-log${query ? `?${query}` : ''}`);
+  },
+  postActivityLog: (body) => api.post('/activity-log', body),
 };
