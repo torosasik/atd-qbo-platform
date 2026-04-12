@@ -4,7 +4,9 @@ import { api } from '../utils/api';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import Toast from '../components/shared/Toast';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+// Using full Cloud Function URL for "Connect to QuickBooks" to avoid Safe Browsing warning
+// on relative OAuth redirect paths (per exact task requirements)
+const CONNECT_URL = 'https://us-central1-atd-qbo-platform.cloudfunctions.net/api/auth/connect';
 
 /**
  * Calculates detailed expiry information with color-coded thresholds:
@@ -93,6 +95,17 @@ export default function QBOConnect() {
       setLoading(false);
     }
   }, []);
+
+  // Handle OAuth callback with ?status=connected query param (redirects back to hosting URL)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const statusParam = params.get('status');
+    if (statusParam === 'connected') {
+      setToast({ message: 'Successfully connected to QuickBooks!', type: 'success' });
+      window.history.replaceState({}, document.title, window.location.pathname);
+      fetchStatus();
+    }
+  }, [fetchStatus]);
 
   useEffect(() => {
     fetchStatus();
@@ -306,7 +319,7 @@ export default function QBOConnect() {
         <div className="flex flex-wrap gap-3">
           {!connected && (
             <a
-              href={`${API_BASE_URL}/auth/connect`}
+              href={CONNECT_URL}
               className="flex items-center gap-2 bg-atd-blue hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
             >
               <ExternalLink className="h-4 w-4" />

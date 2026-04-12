@@ -1,3 +1,5 @@
+// INTUIT DEVELOPER PORTAL: Update redirect URI at https://developer.intuit.com
+// Current redirect URI: https://us-central1-atd-qbo-platform.cloudfunctions.net/api/auth/callback
 'use strict';
 
 const fetch = require('node-fetch');

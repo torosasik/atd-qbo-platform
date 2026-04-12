@@ -31,7 +31,8 @@ router.get('/callback', async (req, res, next) => {
     }
 
     await handleCallback(code, realmId, state);
-    return res.redirect('/settings?auth=connected');
+    // Redirect to QBO Connect page after successful token storage in Firestore
+    return res.redirect('https://atd-qbo-platform.web.app/qbo-connect?status=connected');
   } catch (err) {
     await logAction('qbo-auth', 'oauth-callback', 'error', { error: err.message });
     return res.redirect('/?auth=error&reason=' + encodeURIComponent(err.message));

@@ -95,7 +95,8 @@ const DEFAULT_SETTINGS = {
     notifications: false,          // In-app notifications (coming soon)
   },
   oauth: {
-    redirect_uri: 'https://atd-qbo-platform.web.app/api/auth/callback',
+    // Updated to Cloud Functions URL to avoid Google Safe Browsing warning on Firebase Hosting domains. Also update Intuit Developer Portal.
+    redirect_uri: 'https://us-central1-atd-qbo-platform.cloudfunctions.net/api/auth/callback',
   },
 };
 

@@ -54,11 +54,11 @@ apiRouter.use('/bills', billRoutes);
 apiRouter.use('/payments', paymentRoutes);
 apiRouter.use('/expenses', expenseRoutes);
 apiRouter.use('/ai', aiRoutes);
-apiRouter.use('/', cacheRoutes); // customers, vendors, items, accounts, open-invoices
+apiRouter.use('/', cacheRoutes); // customers, vendors, items, accounts, open-invoices, /items/create
 apiRouter.use('/', settingsRoutes); // settings
 apiRouter.use('/', sheetsRoutes); // sheets/test-connection, sheets/preview, sheets/import
 apiRouter.use('/auth', authRoutes);
-apiRouter.use('/vendor', vendorRoutes);
+apiRouter.use('/vendor', vendorRoutes); // /vendor-mappings
 apiRouter.use('/', healthRoutes); // health
 apiRouter.use('/activity-log', activityLogRoutes);
 apiRouter.use('/order-statuses', orderStatusRoutes);

@@ -2,6 +2,29 @@
 
 const Joi = require('joi');
 
+// CORS middleware to allow frontend and Cloud Functions domains for OAuth redirect and API calls
+const cors = (req, res, next) => {
+  const allowedOrigins = [
+    'https://atd-qbo-platform.web.app',
+    'https://us-central1-atd-qbo-platform.cloudfunctions.net'
+  ];
+  const origin = req.get('Origin');
+  if (origin && allowedOrigins.includes(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+  } else if (!origin) {
+    // For same-origin or no Origin header (like direct CF calls)
+    res.set('Access-Control-Allow-Origin', '*');
+  }
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.set('Access-Control-Allow-Credentials', 'true');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send('');
+  }
+  next();
+};
+
 // Validation middleware factory
 const validateRequest = (schema) => {
   return (req, res, next) => {
