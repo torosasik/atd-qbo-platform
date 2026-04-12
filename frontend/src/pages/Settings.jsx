@@ -105,6 +105,7 @@ const BACKEND_DEFAULTS = {
     },
   },
   ai: {
+    mode: 'cloud',
     enabled: true,
     auto_review: true,
     min_confidence: 90,
@@ -113,8 +114,8 @@ const BACKEND_DEFAULTS = {
     ollama_model: 'qwen3.5-coder-35b:latest',
     ollama_url: 'http://localhost:11434',
     claude_model: 'claude-sonnet-4-20250514',
-    ollama_enabled: true,
-    preferred_provider: 'auto',
+    ollama_enabled: false,
+    preferred_provider: 'claude-only',
   },
   qbo: {
     environment: 'production',
@@ -170,6 +171,33 @@ function deepMerge(base, override) {
     }
   }
   return result;
+}
+
+function normalizeAiSettings(ai = {}) {
+  const next = { ...ai };
+  let mode = next.mode;
+  if (!mode) {
+    const enabled = next.enabled !== false;
+    const provider = next.preferred_provider || 'auto';
+    const ollamaEnabled = next.ollama_enabled !== false;
+    if (!enabled) {
+      mode = 'off';
+    } else if (provider === 'ollama-only') {
+      mode = 'ollama';
+    } else if (provider === 'claude-only') {
+      mode = 'cloud';
+    } else {
+      mode = ollamaEnabled ? 'ollama' : 'cloud';
+    }
+  }
+  if (!['off', 'ollama', 'cloud'].includes(mode)) {
+    mode = 'cloud';
+  }
+  next.mode = mode;
+  next.enabled = mode !== 'off';
+  next.ollama_enabled = mode === 'ollama';
+  next.preferred_provider = mode === 'ollama' ? 'ollama-only' : 'claude-only';
+  return next;
 }
 
 // ---------------------------------------------------------------------------
@@ -267,6 +295,7 @@ export default function Settings() {
         const res = await api.getSettings();
         const data = res.settings ?? res.data?.settings ?? res.data ?? res;
         const merged = deepMerge(DEFAULT_SETTINGS, data);
+        merged.ai = normalizeAiSettings(merged.ai || {});
         setSettings(merged);
         setSavedSettings(JSON.parse(JSON.stringify(merged)));
         localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(merged));
@@ -278,6 +307,7 @@ export default function Settings() {
           if (cached) {
             const parsed = JSON.parse(cached);
             fallbackSettings = deepMerge(DEFAULT_SETTINGS, parsed);
+            fallbackSettings.ai = normalizeAiSettings(fallbackSettings.ai || {});
             usedCache = true;
           }
         } catch {
@@ -410,7 +440,7 @@ export default function Settings() {
   }
 
   const gs = settings.google_sheets;
-  const ai = settings.ai;
+  const ai = normalizeAiSettings(settings.ai || {});
   const qbo = settings.qbo;
   const mods = settings.modules;
   const feats = settings.features || {};
@@ -697,6 +727,7 @@ export default function Settings() {
               auto_review: ai.auto_review,
               min_confidence: ai.min_confidence,
               max_tokens: ai.max_tokens,
+              mode: ai.mode,
               review_prompt: ai.review_prompt,
               ollama_url: ai.ollama_url,
               ollama_model: ai.ollama_model,
@@ -709,14 +740,18 @@ export default function Settings() {
         saving={saving.ai}
       >
         <FieldRow
-          label="AI Enabled"
-          tooltip="When enabled, AI will review transactions before they are submitted to QuickBooks."
+          label="AI Mode"
+          tooltip="Choose whether AI is off, local Ollama, or cloud/API-based."
         >
-          <Toggle
-            id="ai-enabled"
-            checked={!!ai.enabled}
-            onChange={(v) => setNested('ai.enabled', v)}
-          />
+          <select
+            value={ai.mode || 'cloud'}
+            onChange={(e) => setNested('ai.mode', e.target.value)}
+            className="w-full sm:w-64 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
+          >
+            <option value="off">AI Off</option>
+            <option value="ollama">Local Ollama AI</option>
+            <option value="cloud">Cloud/API AI</option>
+          </select>
         </FieldRow>
         <FieldRow
           label="Auto Review"
@@ -726,34 +761,8 @@ export default function Settings() {
             id="ai-auto-review"
             checked={!!ai.auto_review}
             onChange={(v) => setNested('ai.auto_review', v)}
-            disabled={!ai.enabled}
+            disabled={ai.mode === 'off'}
           />
-        </FieldRow>
-        <FieldRow
-          label="Ollama Enabled"
-          tooltip="Enable local Ollama AI provider. When disabled, Ollama will be skipped even in Auto mode."
-        >
-          <Toggle
-            id="ai-ollama-enabled"
-            checked={ai.ollama_enabled !== false}
-            onChange={(v) => setNested('ai.ollama_enabled', v)}
-            disabled={!ai.enabled}
-          />
-        </FieldRow>
-        <FieldRow
-          label="Preferred AI Provider"
-          tooltip="Auto: try Ollama first, fall back to Claude. Ollama Only: never use Claude. Claude Only: skip Ollama entirely."
-        >
-          <select
-            value={ai.preferred_provider || 'auto'}
-            onChange={(e) => setNested('ai.preferred_provider', e.target.value)}
-            disabled={!ai.enabled}
-            className="w-full sm:w-64 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            <option value="auto">Auto (Ollama → Claude)</option>
-            <option value="ollama-only">Ollama Only</option>
-            <option value="claude-only">Claude Only</option>
-          </select>
         </FieldRow>
         <FieldRow
           label="Min Confidence (%)"
@@ -768,42 +777,48 @@ export default function Settings() {
             className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
           />
         </FieldRow>
-        <FieldRow
-          label="Ollama URL"
-          tooltip="URL of your local Ollama instance. Ollama is the free, local AI provider used as the primary option."
-        >
-          <div className="flex items-center gap-3">
+        {ai.mode === 'ollama' && (
+          <>
+            <FieldRow
+              label="Ollama URL"
+              tooltip="URL of your local Ollama instance."
+            >
+              <div className="flex items-center gap-3">
+                <TextInput
+                  value={ai.ollama_url}
+                  onChange={(v) => setNested('ai.ollama_url', v)}
+                  placeholder="http://localhost:11434"
+                />
+                <div className="flex items-center gap-1.5 whitespace-nowrap">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-400" />
+                  <span className="text-xs text-gray-400">Status unknown</span>
+                </div>
+              </div>
+            </FieldRow>
+            <FieldRow
+              label="Ollama Model"
+              tooltip="The Ollama model to use for AI reviews."
+            >
+              <TextInput
+                value={ai.ollama_model}
+                onChange={(v) => setNested('ai.ollama_model', v)}
+                placeholder="llama3"
+              />
+            </FieldRow>
+          </>
+        )}
+        {ai.mode === 'cloud' && (
+          <FieldRow
+            label="Cloud Model"
+            tooltip="The cloud/API model used for AI reviews."
+          >
             <TextInput
-              value={ai.ollama_url}
-              onChange={(v) => setNested('ai.ollama_url', v)}
-              placeholder="http://localhost:11434"
+              value={ai.claude_model}
+              onChange={(v) => setNested('ai.claude_model', v)}
+              placeholder="claude-sonnet-4-20250514"
             />
-            <div className="flex items-center gap-1.5 whitespace-nowrap">
-              <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-400" />
-              <span className="text-xs text-gray-400">Status unknown</span>
-            </div>
-          </div>
-        </FieldRow>
-        <FieldRow
-          label="Ollama Model"
-          tooltip="The Ollama model to use for AI reviews. llama3 is recommended for best results."
-        >
-          <TextInput
-            value={ai.ollama_model}
-            onChange={(v) => setNested('ai.ollama_model', v)}
-            placeholder="llama3"
-          />
-        </FieldRow>
-        <FieldRow
-          label="Claude Model"
-          tooltip="The Claude API model used as a fallback when Ollama is unavailable or confidence is below the threshold."
-        >
-          <TextInput
-            value={ai.claude_model}
-            onChange={(v) => setNested('ai.claude_model', v)}
-            placeholder="claude-sonnet-4-20250514"
-          />
-        </FieldRow>
+          </FieldRow>
+        )}
         <FieldRow
           label="Max Tokens"
           tooltip="Maximum number of tokens for AI responses. Higher values allow longer, more detailed reviews."

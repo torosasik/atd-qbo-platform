@@ -167,72 +167,107 @@ router.get('/', async (req, res) => {
     errors.push('Failed to read QBO token status. Check Firestore access.');
   }
 
-  // ---- 3. Ollama ----
+  const aiMode = settings.ai?.mode || 'cloud';
   const ollamaUrl = settings.ai?.ollama_url || 'http://localhost:11434';
   const ollamaModel = settings.ai?.ollama_model || 'llama3';
-  let ollamaTimer;
-  try {
-    const controller = new AbortController();
-    ollamaTimer = setTimeout(() => controller.abort(), 3000);
-    const ollamaRes = await fetch(`${ollamaUrl}/api/tags`, { signal: controller.signal });
-    clearTimeout(ollamaTimer);
+  const claudeModel = settings.ai?.claude_model || 'claude-sonnet-4-20250514';
 
-    if (ollamaRes.ok) {
-      const ollamaData = await ollamaRes.json();
-      const models = (ollamaData.models || []).map((m) => (typeof m === 'string' ? m : m.name));
-      services.ollama = {
-        status: 'connected',
-        message: `Ollama is running with ${ollamaModel} model`,
-        url: ollamaUrl,
-        models,
-      };
-    } else {
-      throw new Error(`Ollama responded with HTTP ${ollamaRes.status}`);
-    }
-  } catch (_err) {
-    if (ollamaTimer) clearTimeout(ollamaTimer);
+  // ---- 3. AI provider checks (mode-aware) ----
+  if (aiMode === 'off') {
     services.ollama = {
-      status: 'unavailable',
-      message: 'Ollama is not reachable',
+      status: 'not_configured',
+      message: 'AI mode is off',
       url: ollamaUrl,
       models: [],
     };
-    errors.push('Ollama is not running. Start it with: ollama serve');
+    services.claude_api = {
+      status: 'not_configured',
+      provider: 'claude',
+      message: 'AI mode is off',
+      model: claudeModel,
+    };
+  }
+
+  if (aiMode === 'ollama') {
+    let ollamaTimer;
+    try {
+      const controller = new AbortController();
+      ollamaTimer = setTimeout(() => controller.abort(), 3000);
+      const ollamaRes = await fetch(`${ollamaUrl}/api/tags`, { signal: controller.signal });
+      clearTimeout(ollamaTimer);
+
+      if (ollamaRes.ok) {
+        const ollamaData = await ollamaRes.json();
+        const models = (ollamaData.models || []).map((m) => (typeof m === 'string' ? m : m.name));
+        services.ollama = {
+          status: 'connected',
+          message: `Ollama is running with ${ollamaModel} model`,
+          url: ollamaUrl,
+          models,
+        };
+      } else {
+        throw new Error(`Ollama responded with HTTP ${ollamaRes.status}`);
+      }
+    } catch (_err) {
+      if (ollamaTimer) clearTimeout(ollamaTimer);
+      services.ollama = {
+        status: 'unavailable',
+        message: 'Ollama is not reachable',
+        url: ollamaUrl,
+        models: [],
+      };
+      errors.push('Ollama is not running. Start it with: ollama serve');
+    }
+
+    services.claude_api = {
+      status: 'not_configured',
+      provider: 'claude',
+      message: 'Inactive because AI mode is Local Ollama',
+      model: claudeModel,
+    };
   }
 
   // ---- 4. Claude API (lightweight key check — no real API call) ----
+  if (aiMode === 'cloud') {
   const claudeKey = process.env.CLAUDE_API_KEY;
-  const claudeModel = settings.ai?.claude_model || 'claude-sonnet-4-20250514';
-  try {
-    const apiKey = claudeKey || '';
-    if (apiKey && apiKey.startsWith('sk-ant-')) {
+    try {
+      const apiKey = claudeKey || '';
+      if (apiKey && apiKey.startsWith('sk-ant-')) {
+        services.claude_api = {
+          status: 'configured',
+          provider: 'claude',
+          message: 'API key configured',
+          model: claudeModel,
+        };
+      } else if (apiKey) {
+        services.claude_api = {
+          status: 'configured',
+          provider: 'unknown',
+          message: 'API key configured',
+          model: claudeModel,
+        };
+      } else {
+        services.claude_api = {
+          status: 'disconnected',
+          provider: 'none',
+          message: 'No API key configured',
+          model: claudeModel,
+        };
+        errors.push('Claude API key not set. Add CLAUDE_API_KEY to functions/.env');
+      }
+    } catch (claudeErr) {
       services.claude_api = {
-        status: 'configured',
-        provider: 'claude',
-        message: 'API key configured',
+        status: 'error',
+        message: claudeErr.message,
         model: claudeModel,
       };
-    } else if (apiKey) {
-      services.claude_api = {
-        status: 'configured',
-        provider: 'unknown',
-        message: 'API key configured',
-        model: claudeModel,
-      };
-    } else {
-      services.claude_api = {
-        status: 'disconnected',
-        provider: 'none',
-        message: 'No API key configured',
-        model: claudeModel,
-      };
-      errors.push('Claude API key not set. Add CLAUDE_API_KEY to functions/.env');
     }
-  } catch (claudeErr) {
-    services.claude_api = {
-      status: 'error',
-      message: claudeErr.message,
-      model: claudeModel,
+
+    services.ollama = {
+      status: 'not_configured',
+      message: 'Inactive because AI mode is Cloud/API AI',
+      url: ollamaUrl,
+      models: [],
     };
   }
 
@@ -283,12 +318,16 @@ router.get('/', async (req, res) => {
   // ---- Overall status ----
   const firestoreOk = services.firestore?.status === 'connected';
   const qboOk = services.qbo_api?.status === 'connected';
-  const ollamaOk = services.ollama?.status === 'connected';
+  const aiModeOk = aiMode === 'off'
+    ? true
+    : aiMode === 'ollama'
+      ? services.ollama?.status === 'connected'
+      : services.claude_api?.status === 'configured';
 
   let overallStatus;
   if (!firestoreOk || !qboOk) {
     overallStatus = 'unhealthy';
-  } else if (!ollamaOk) {
+  } else if (!aiModeOk) {
     overallStatus = 'degraded';
   } else {
     overallStatus = 'healthy';

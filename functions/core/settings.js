@@ -50,6 +50,7 @@ const DEFAULT_SETTINGS = {
     },
   },
   ai: {
+    mode: 'cloud', // 'off' | 'ollama' | 'cloud'
     enabled: true,
     auto_review: true,
     min_confidence: 90,
@@ -100,6 +101,37 @@ const DEFAULT_SETTINGS = {
   },
 };
 
+function normalizeAiSettings(ai = {}) {
+  const normalized = { ...ai };
+  let mode = normalized.mode;
+
+  if (!mode) {
+    const enabled = normalized.enabled !== false;
+    const preferredProvider = normalized.preferred_provider || 'auto';
+    const ollamaEnabled = normalized.ollama_enabled !== false;
+
+    if (!enabled) {
+      mode = 'off';
+    } else if (preferredProvider === 'ollama-only') {
+      mode = 'ollama';
+    } else if (preferredProvider === 'claude-only') {
+      mode = 'cloud';
+    } else {
+      mode = ollamaEnabled ? 'ollama' : 'cloud';
+    }
+  }
+
+  if (!['off', 'ollama', 'cloud'].includes(mode)) {
+    mode = DEFAULT_SETTINGS.ai.mode;
+  }
+
+  normalized.mode = mode;
+  normalized.enabled = mode !== 'off';
+  normalized.ollama_enabled = mode === 'ollama';
+  normalized.preferred_provider = mode === 'ollama' ? 'ollama-only' : 'claude-only';
+  return normalized;
+}
+
 /**
  * Deep merge source into target. Mutates target. Arrays are replaced, not merged.
  */
@@ -133,12 +165,16 @@ async function getSettings() {
       _createdAt: FieldValue.serverTimestamp(),
       _updatedAt: FieldValue.serverTimestamp(),
     });
-    return { ...DEFAULT_SETTINGS };
+    return {
+      ...DEFAULT_SETTINGS,
+      ai: normalizeAiSettings(DEFAULT_SETTINGS.ai),
+    };
   }
 
   // Merge stored values on top of defaults so new default keys appear automatically
   const stored = docSnap.data();
   const merged = deepMerge(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), stored);
+  merged.ai = normalizeAiSettings(merged.ai);
   // Strip internal Firestore metadata fields before returning
   delete merged._createdAt;
   delete merged._updatedAt;
@@ -156,6 +192,9 @@ async function updateSettings(updates) {
   // Read current settings first so the returned value is accurate
   const current = await getSettings();
   const updated = deepMerge(current, updates);
+  if (updated.ai) {
+    updated.ai = normalizeAiSettings(updated.ai);
+  }
 
   await db.doc(SETTINGS_DOC).set({
     ...updated,
@@ -163,6 +202,11 @@ async function updateSettings(updates) {
   });
 
   return updated;
+}
+
+async function getAiMode() {
+  const settings = await getSettings();
+  return settings.ai?.mode || DEFAULT_SETTINGS.ai.mode;
 }
 
 /**
@@ -177,4 +221,4 @@ async function getSettingValue(path) {
   return path.split('.').reduce((obj, key) => (obj != null ? obj[key] : undefined), settings);
 }
 
-module.exports = { getSettings, updateSettings, getSettingValue, DEFAULT_SETTINGS };
+module.exports = { getSettings, updateSettings, getSettingValue, getAiMode, normalizeAiSettings, DEFAULT_SETTINGS };

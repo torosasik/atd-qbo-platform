@@ -35,6 +35,7 @@ const OLLAMA_AVAILABILITY_TIMEOUT_MS = 3000;
 async function loadAiSettings() {
   try {
     const settings = await getSettings();
+    const aiMode = settings.ai?.mode || DEFAULT_SETTINGS.ai.mode;
     return {
       ollamaUrl: settings.ai.ollama_url || DEFAULT_SETTINGS.ai.ollama_url,
       claudeModel: settings.ai.claude_model || DEFAULT_SETTINGS.ai.claude_model,
@@ -45,6 +46,7 @@ async function loadAiSettings() {
         ? settings.ai.ollama_enabled
         : DEFAULT_SETTINGS.ai.ollama_enabled,
       preferredProvider: settings.ai.preferred_provider || DEFAULT_SETTINGS.ai.preferred_provider,
+      aiMode,
     };
   } catch (_err) {
     return {
@@ -53,6 +55,7 @@ async function loadAiSettings() {
       confidenceThreshold: DEFAULT_SETTINGS.ai.min_confidence,
       ollamaEnabled: DEFAULT_SETTINGS.ai.ollama_enabled,
       preferredProvider: DEFAULT_SETTINGS.ai.preferred_provider,
+      aiMode: DEFAULT_SETTINGS.ai.mode,
     };
   }
 }
@@ -183,16 +186,34 @@ async function callClaude(prompt, claudeModel) {
 async function askAI(prompt, options = {}) {
   const module = options.module || 'unknown';
 
-  const { ollamaUrl, claudeModel, confidenceThreshold, ollamaEnabled, preferredProvider } = await loadAiSettings();
+  const {
+    ollamaUrl,
+    claudeModel,
+    confidenceThreshold,
+    ollamaEnabled,
+    preferredProvider,
+    aiMode,
+  } = await loadAiSettings();
   const ollamaModel = options.ollamaModel || DEFAULT_SETTINGS.ai.ollama_model;
 
+  if (aiMode === 'off') {
+    await logAction(module, 'ai-review', 'skipped', {
+      source: 'none',
+      model: null,
+      confidence: 0,
+      promptLength: prompt.length,
+      reason: 'AI mode is off',
+    });
+    return { answer: '', confidence: 0, source: 'none' };
+  }
+
   // Determine which providers to try based on preferred_provider setting
-  const useOllama = preferredProvider === 'ollama-only' ||
-    (preferredProvider === 'auto' && ollamaEnabled);
-  const useClaude = preferredProvider === 'claude-only' ||
-    preferredProvider === 'auto';
-  const ollamaOnly = preferredProvider === 'ollama-only';
-  const claudeOnly = preferredProvider === 'claude-only';
+  const modeDrivenUseOllama = aiMode === 'ollama';
+  const modeDrivenUseClaude = aiMode === 'cloud';
+  const useOllama = modeDrivenUseOllama || (preferredProvider === 'ollama-only') || (preferredProvider === 'auto' && ollamaEnabled);
+  const useClaude = modeDrivenUseClaude || preferredProvider === 'claude-only' || preferredProvider === 'auto';
+  const ollamaOnly = modeDrivenUseOllama || preferredProvider === 'ollama-only';
+  const claudeOnly = modeDrivenUseClaude || preferredProvider === 'claude-only';
 
   // -------------------------------------------------------------------------
   // Attempt 1: Ollama (local, free) – skipped when claude-only or ollama disabled

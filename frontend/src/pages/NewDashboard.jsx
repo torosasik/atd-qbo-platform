@@ -134,9 +134,7 @@ export default function Dashboard() {
       if (settingsRes?.settings?.ai) {
         const ai = settingsRes.settings.ai;
         setAiStatus({
-          enabled: ai.enabled !== false,
-          ollamaEnabled: ai.ollama_enabled !== false,
-          provider: ai.preferred_provider || 'auto',
+          mode: ai.mode || (ai.enabled === false ? 'off' : (ai.ollama_enabled === false ? 'cloud' : 'ollama')),
         });
       }
       const drafts = Array.isArray(draftsRes.drafts) ? draftsRes.drafts : [];
@@ -567,11 +565,9 @@ function OverviewSection({ stats, systemOk, aiStatus, loading, onRefresh, onClos
   // Build AI status label
   const aiLabel = (() => {
     if (!aiStatus) return null;
-    if (!aiStatus.enabled) return 'AI Disabled';
-    if (aiStatus.provider === 'claude-only') return 'Claude Only';
-    if (aiStatus.provider === 'ollama-only') return aiStatus.ollamaEnabled ? 'Ollama Only' : 'Ollama Only (Disabled!)';
-    // auto
-    return aiStatus.ollamaEnabled ? 'Ollama Enabled (Auto)' : 'Claude Fallback (Ollama Off)';
+    if (aiStatus.mode === 'off') return 'AI Off';
+    if (aiStatus.mode === 'ollama') return 'Local Ollama AI';
+    return 'Cloud/API AI';
   })();
 
   return (
@@ -618,15 +614,15 @@ function OverviewSection({ stats, systemOk, aiStatus, loading, onRefresh, onClos
             <Brain className="h-5 w-5 text-purple-500" />
             <span className="text-sm font-medium text-atd-dark">AI Provider</span>
           </div>
-          <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${
-            !aiStatus.enabled
-              ? 'bg-gray-100 text-gray-500'
-              : aiStatus.ollamaEnabled
-                ? 'bg-purple-100 text-purple-700'
-                : 'bg-blue-100 text-blue-700'
-          }`}>
+            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${
+              aiStatus.mode === 'off'
+                ? 'bg-gray-100 text-gray-500'
+                : aiStatus.mode === 'ollama'
+                  ? 'bg-purple-100 text-purple-700'
+                  : 'bg-blue-100 text-blue-700'
+            }`}>
             <span className={`inline-block h-2 w-2 rounded-full ${
-              !aiStatus.enabled ? 'bg-gray-400' : 'bg-green-500'
+              aiStatus.mode === 'off' ? 'bg-gray-400' : 'bg-green-500'
             }`} />
             {aiLabel}
           </span>
