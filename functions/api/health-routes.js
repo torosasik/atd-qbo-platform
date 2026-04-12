@@ -3,12 +3,13 @@
 const express = require('express');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getSettings } = require('../core/settings');
-const { ensureValidToken, getQboBaseUrl, QBO_TOKENS_DOC } = require('../core/qbo-auth');
+const { ensureValidToken, getQboBaseUrl } = require('../core/qbo-auth');
+const { QBO_TOKENS_DOC } = require('../core/google-auth');
 const { getSheetsClient } = require('../core/sheets-connector');
 
 const router = express.Router();
 
-// GET /health
+// GET / (mounted at /health in index.js via apiRouter.use('/health', healthRoutes))
 router.get('/', async (req, res) => {
   const services = {};
   const errors = [];

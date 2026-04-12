@@ -76,7 +76,7 @@ export const api = {
   updateSettings: (updates) => api.put('/settings', updates),
 
   getVendors: () => api.get('/vendors'),
-  getVendorMappings: () => api.get('/vendor-mappings'),
+  getVendorMappings: () => api.get('/vendor/mappings'),
   getItems: () => api.get('/items'),
   createItem: (body) => api.post('/items/create', body),
 
@@ -140,7 +140,7 @@ export const api = {
   }),
 
   // Vendor Mappings
-  syncVendorMappings: () => api.post('/vendor-mappings/sync', {}),
+  syncVendorMappings: () => api.post('/vendor/mappings/sync', {}),
 
   // Health
   getHealth: () => api.get('/health'),
@@ -151,6 +151,11 @@ export const api = {
   setOrderStatus: (orderNumber, lineItem, status) =>
     api.put(`/order-statuses/${encodeURIComponent(orderNumber)}${lineItem ? `/${encodeURIComponent(lineItem)}` : ''}`, { status }),
   bulkSetOrderStatuses: (updates) => api.put('/order-statuses/bulk', { updates }),
+
+  // Order Fulfillment Tracking
+  getOrderFulfillment: () => api.get('/order-fulfillment'),
+  setOrderFulfillment: (orderNumber, lineItem, data) =>
+    api.put(`/order-fulfillment/${encodeURIComponent(orderNumber)}${lineItem ? `/${encodeURIComponent(lineItem)}` : ''}`, data),
 
   // Activity Log
   getActivityLogs: (params = {}) => {
