@@ -34,8 +34,8 @@ router.get('/customers', async (req, res, next) => {
   try {
     await ensureValidToken();
     const realmId = await getRealmId();
-    const customers = await getCachedCustomers(realmId);
-    sendSuccess(res, { customers });
+    const { data: customers, meta } = await getCachedCustomers(realmId, { includeMeta: true });
+    sendSuccess(res, { customers, lastSyncedAt: meta.lastSyncedAt, stale: meta.stale });
   } catch (err) {
     if (err.code === 'QBO_AUTH_EXPIRED') {
       const error = new Error('QuickBooks connection is not available');
@@ -53,8 +53,8 @@ router.get('/vendors', async (req, res, next) => {
   try {
     await ensureValidToken();
     const realmId = await getRealmId();
-    const vendors = await getCachedVendors(realmId);
-    sendSuccess(res, { vendors });
+    const { data: vendors, meta } = await getCachedVendors(realmId, { includeMeta: true });
+    sendSuccess(res, { vendors, lastSyncedAt: meta.lastSyncedAt, stale: meta.stale });
   } catch (err) {
     if (err.code === 'QBO_AUTH_EXPIRED') {
       const error = new Error('QuickBooks connection is not available');
@@ -72,8 +72,8 @@ router.get('/items', async (req, res, next) => {
   try {
     await ensureValidToken();
     const realmId = await getRealmId();
-    const items = await getCachedItems(realmId);
-    sendSuccess(res, { items });
+    const { data: items, meta } = await getCachedItems(realmId, { includeMeta: true });
+    sendSuccess(res, { items, lastSyncedAt: meta.lastSyncedAt, stale: meta.stale });
   } catch (err) {
     if (err.code === 'QBO_AUTH_EXPIRED') {
       const error = new Error('QuickBooks connection is not available');
@@ -184,7 +184,7 @@ router.get('/accounts', async (req, res, next) => {
   try {
     await ensureValidToken();
     const realmId = await getRealmId();
-    const accounts = await getCachedAccounts(realmId);
+    const { data: accounts, meta } = await getCachedAccounts(realmId, { includeMeta: true });
 
     const expenseAccounts = accounts
       .filter((a) => {
@@ -198,7 +198,7 @@ router.get('/accounts', async (req, res, next) => {
         fullyQualifiedName: a.FullyQualifiedName || a.Name,
       }));
 
-    sendSuccess(res, { accounts: expenseAccounts });
+    sendSuccess(res, { accounts: expenseAccounts, lastSyncedAt: meta.lastSyncedAt, stale: meta.stale });
   } catch (err) {
     next(err);
   }

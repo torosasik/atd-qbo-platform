@@ -3,11 +3,28 @@ import Fuse from 'fuse.js';
 import { Search } from 'lucide-react';
 
 const FUSE_CONFIG = {
-  threshold: 0.4,
-  distance: 100,
-  minMatchCharLength: 2,
-  keys: ['productName', 'sku', 'orderNumber', 'vendorName'],
+  threshold: 0.32,
+  distance: 120,
+  minMatchCharLength: 1,
+  ignoreLocation: true,
+  keys: ['productName', 'itemName', 'sku', 'orderNumber', 'vendorName', 'lineItem'],
 };
+
+function normalize(value) {
+  return String(value ?? '').toLowerCase().trim();
+}
+
+function includesAllTokens(item, tokens) {
+  const haystack = normalize([
+    item.productName,
+    item.itemName,
+    item.sku,
+    item.orderNumber,
+    item.vendorName,
+    item.lineItem,
+  ].join(' '));
+  return tokens.every((token) => haystack.includes(token));
+}
 
 export default function FuzzySearch({ items, totalCount, onResultsChange }) {
   const [query, setQuery] = useState('');
@@ -47,40 +64,16 @@ export default function FuzzySearch({ items, totalCount, onResultsChange }) {
       };
     }
 
-    const matchMap = new Map();
+    const directIndexes = items
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => includesAllTokens(item, tokens))
+      .map(({ index }) => index);
 
-    tokens.forEach((token) => {
-      const tokenResults = fuse.search(token);
-      tokenResults.forEach((result) => {
-        const existing = matchMap.get(result.refIndex);
-        const score = result.score ?? 1;
-
-        if (existing) {
-          existing.tokenMatches += 1;
-          existing.scoreSum += score;
-          existing.maxScore = Math.max(existing.maxScore, score);
-        } else {
-          matchMap.set(result.refIndex, {
-            tokenMatches: 1,
-            scoreSum: score,
-            maxScore: score,
-          });
-        }
-      });
-    });
-
-    const ranked = [...matchMap.entries()]
-      .filter(([, value]) => value.tokenMatches === tokens.length)
-      .map(([index, value]) => ({
-        index,
-        avgScore: value.scoreSum / value.tokenMatches,
-        maxScore: value.maxScore,
-      }))
-      .sort((a, b) => a.avgScore - b.avgScore);
-
-    const indexes = ranked.map((entry) => entry.index);
+    const fuseResults = directIndexes.length === 0 ? fuse.search(debouncedQuery) : [];
+    const fuseIndexes = fuseResults.map((entry) => entry.refIndex);
+    const indexes = directIndexes.length > 0 ? directIndexes : fuseIndexes;
     const hasNoResults = indexes.length === 0;
-    const hasClosestMatches = ranked.some((entry) => entry.maxScore > 0.3);
+    const hasClosestMatches = directIndexes.length === 0 && fuseResults.length > 0;
 
     return {
       indexes,
@@ -89,7 +82,7 @@ export default function FuzzySearch({ items, totalCount, onResultsChange }) {
       hasNoResults,
       query: debouncedQuery,
     };
-  }, [debouncedQuery, fuse, items.length]);
+  }, [debouncedQuery, fuse, items]);
 
   useEffect(() => {
     onResultsChange(searchState);

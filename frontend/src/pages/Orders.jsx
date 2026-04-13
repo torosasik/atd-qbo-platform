@@ -10,7 +10,6 @@ import {
   X,
   Save,
   Package,
-  Truck,
   DollarSign,
   ChevronRight,
 } from 'lucide-react';
@@ -51,6 +50,28 @@ const SOURCE_OPTIONS = [
 
 const MANDATORY_COLUMNS = ['Order #', 'Item Name', 'Qty', 'SKU'];
 const COL_PREFS_KEY = 'atd.orders.column_prefs.v1';
+const ORDERS_CACHE_KEY = 'atd.orders.last_payload.v1';
+
+const PRIORITY_COPY_HEADERS = new Set([
+  'sku',
+  'item name',
+  'item description',
+  'vendor',
+  'vendor name',
+  'supplier',
+  'order #',
+  'order number',
+  'line item #',
+  'line item',
+  'variant id',
+  'continuation',
+]);
+
+const FIXED_COL_WIDTHS = {
+  select: '44px',
+  expand: '34px',
+  status: '170px',
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -70,6 +91,22 @@ function findHeaderKey(headers = [], candidates = []) {
     if (match) return match.original;
   }
   return null;
+}
+
+function isPriorityCopyHeader(header = '') {
+  return PRIORITY_COPY_HEADERS.has(String(header).trim().toLowerCase());
+}
+
+function formatTimestamp(value) {
+  if (!value) return null;
+  try {
+    const normalized = value?.toDate ? value.toDate() : value;
+    const date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleString();
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -106,7 +143,7 @@ function FulfillmentBadges({ fulfillment }) {
   return <div className="flex flex-wrap gap-1 mt-1">{badges}</div>;
 }
 
-function CopyCell({ value }) {
+function CopyCell({ value, enabled = false }) {
   const [copied, setCopied] = useState(false);
   function handleCopy(e) {
     e.stopPropagation();
@@ -116,11 +153,18 @@ function CopyCell({ value }) {
     });
   }
   return (
-    <span className="group relative inline-flex items-center gap-1 max-w-[200px]">
+    <span className="group relative inline-flex items-center gap-1 max-w-full">
       <span className="truncate">{value}</span>
-      <button onClick={handleCopy} className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-atd-blue flex-shrink-0" title="Copy">
+      {enabled && (
+      <button
+        onClick={handleCopy}
+        className={`transition-opacity text-gray-400 hover:text-atd-blue flex-shrink-0 ${copied ? 'opacity-100' : 'opacity-70 group-hover:opacity-100'}`}
+        title={copied ? 'Copied' : 'Copy'}
+        aria-label={copied ? 'Copied' : 'Copy value'}
+      >
         {copied ? <Check className="h-3 w-3 text-green-500" /> : <ClipboardIcon className="h-3 w-3" />}
       </button>
+      )}
     </span>
   );
 }
@@ -332,6 +376,8 @@ export default function Orders() {
   const [searchState, setSearchState] = useState({
     indexes: null, resultCount: 0, hasClosestMatches: false, hasNoResults: false, query: '',
   });
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  const [ordersDataSource, setOrdersDataSource] = useState(null);
 
   // Derived header keys
   const orderNumHeader = useMemo(() => findHeaderKey(headers, ['Order #', 'Order Number']), [headers]);
@@ -339,6 +385,7 @@ export default function Orders() {
   const itemNameHeader = useMemo(() => findHeaderKey(headers, ['Item Name', 'Item Description']), [headers]);
   const qtyHeader = useMemo(() => findHeaderKey(headers, ['Qty', 'Quantity']), [headers]);
   const skuHeader = useMemo(() => findHeaderKey(headers, ['SKU']), [headers]);
+  const vendorHeader = useMemo(() => findHeaderKey(headers, ['Vendor', 'Vendor Name', 'Supplier']), [headers]);
 
   const mandatoryResolved = useMemo(() => {
     return [orderNumHeader, itemNameHeader, qtyHeader, skuHeader].filter(Boolean);
@@ -372,12 +419,40 @@ export default function Orders() {
         api.getOrderStatuses(),
         api.getOrderFulfillment(),
       ]);
-      setHeaders(ordersRes?.data?.headers || []);
-      setRows(ordersRes?.data?.rows || []);
+      const ordersData = ordersRes?.data || ordersRes || {};
+      const nextHeaders = ordersData.headers || [];
+      const nextRows = ordersData.rows || [];
+      setHeaders(nextHeaders);
+      setRows(nextRows);
       setStatuses(statusesRes?.data?.statuses || {});
       setFulfillment(fulfillmentRes?.data?.fulfillment || {});
+      setLastSyncedAt(ordersData.lastSyncedAt || null);
+      setOrdersDataSource(ordersData.source || null);
+      localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify({
+        headers: nextHeaders,
+        rows: nextRows,
+        lastSyncedAt: ordersData.lastSyncedAt || null,
+        source: ordersData.source || 'live',
+      }));
+      if (ordersData.warning) {
+        setToast({ message: ordersData.warning, type: 'error' });
+      }
     } catch (err) {
-      setError(err.message || 'Failed to load orders');
+      const cached = localStorage.getItem(ORDERS_CACHE_KEY);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setHeaders(parsed.headers || []);
+          setRows(parsed.rows || []);
+          setLastSyncedAt(parsed.lastSyncedAt || null);
+          setOrdersDataSource('stale-local-cache');
+          setError('Live pull failed. Showing last successful synced snapshot.');
+        } catch {
+          setError(err.message || 'Failed to load orders');
+        }
+      } else {
+        setError(err.message || 'Failed to load orders');
+      }
     } finally {
       setLoading(false);
     }
@@ -407,18 +482,35 @@ export default function Orders() {
 
   const searchableRows = useMemo(() => {
     return baseRows.map((row) => ({
+      __index: baseRows.indexOf(row),
       row,
       productName: String(itemNameHeader ? row[itemNameHeader] ?? '' : ''),
+      itemName: String(itemNameHeader ? row[itemNameHeader] ?? '' : ''),
       sku: String(skuHeader ? row[skuHeader] ?? '' : ''),
       orderNumber: String(orderNumHeader ? row[orderNumHeader] ?? '' : ''),
-      vendorName: String(findHeaderKey(headers, ['Vendor', 'Vendor Name', 'Supplier']) ? row[findHeaderKey(headers, ['Vendor', 'Vendor Name', 'Supplier'])] ?? '' : ''),
+      lineItem: String(lineItemHeader ? row[lineItemHeader] ?? '' : ''),
+      vendorName: String(vendorHeader ? row[vendorHeader] ?? '' : ''),
     }));
-  }, [baseRows, headers, itemNameHeader, skuHeader, orderNumHeader]);
+  }, [baseRows, itemNameHeader, skuHeader, orderNumHeader, lineItemHeader, vendorHeader]);
 
   const displayRows = useMemo(() => {
     if (!searchState.indexes) return baseRows;
     return searchState.indexes.map((idx) => searchableRows[idx]?.row).filter(Boolean);
   }, [baseRows, searchableRows, searchState]);
+
+  const colWidths = useMemo(() => {
+    const widths = {};
+    colsToShow.forEach((header) => {
+      const key = String(header || '').toLowerCase();
+      if (key.includes('item')) widths[header] = '260px';
+      else if (key.includes('vendor')) widths[header] = '180px';
+      else if (key.includes('order')) widths[header] = '140px';
+      else if (key.includes('sku') || key.includes('line item')) widths[header] = '130px';
+      else if (key.includes('qty') || key.includes('quantity')) widths[header] = '90px';
+      else widths[header] = '130px';
+    });
+    return widths;
+  }, [colsToShow]);
 
   function handleSort(header) {
     if (sortKey === header) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -537,6 +629,9 @@ export default function Orders() {
           <p className="text-gray-500 text-sm mt-0.5">
             {displayRows.length} row{displayRows.length !== 1 ? 's' : ''} from Google Sheets
           </p>
+          <p className="text-xs text-gray-400 mt-1">
+            Last synced: {formatTimestamp(lastSyncedAt) || 'Not yet synced'}{ordersDataSource ? ` • Source: ${ordersDataSource}` : ''}
+          </p>
           {/* Status summary badges */}
           {rows.length > 0 && (
             <div className="flex items-center gap-2 mt-2">
@@ -626,7 +721,15 @@ export default function Orders() {
       {/* Table */}
       <div className="bg-white rounded-xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[1100px] text-sm table-fixed">
+            <colgroup>
+              <col style={{ width: FIXED_COL_WIDTHS.select }} />
+              <col style={{ width: FIXED_COL_WIDTHS.expand }} />
+              <col style={{ width: FIXED_COL_WIDTHS.status }} />
+              {colsToShow.map((header) => (
+                <col key={`col-${header}`} style={{ width: colWidths[header] }} />
+              ))}
+            </colgroup>
             <thead className="bg-gray-50 sticky top-0 z-10">
               <tr>
                 <th className="w-10 px-3 py-3 text-left">
@@ -648,7 +751,12 @@ export default function Orders() {
               {displayRows.length === 0 ? (
                 <tr>
                   <td colSpan={colsToShow.length + 3} className="px-6 py-16 text-center">
-                    {rows.length === 0 ? (
+                    {searchState.query ? (
+                      <div className="space-y-2">
+                        <p className="text-gray-500 font-medium">No matching orders</p>
+                        <p className="text-sm text-gray-400">Try SKU, item name, vendor, order number, or line item.</p>
+                      </div>
+                    ) : rows.length === 0 ? (
                       <div className="space-y-2">
                         <p className="text-gray-500 font-medium">No orders found</p>
                         <p className="text-sm text-gray-400">
@@ -677,22 +785,22 @@ export default function Orders() {
                   const isExpanded = expandedRow === idx;
 
                   return (
-                    <tr key={idx} className="group">
-                      <td colSpan={colsToShow.length + 3} className="p-0">
-                        {/* Main row */}
-                        <div
-                          className={`flex items-center transition-colors cursor-pointer ${
-                            isSelected ? 'bg-blue-50' : isExpanded ? 'bg-amber-50' : idx % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50/50 hover:bg-gray-100/50'
-                          }`}
-                          onClick={() => setExpandedRow(isExpanded ? null : idx)}
-                        >
-                          <div className="w-10 px-3 py-2.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                            <input type="checkbox" checked={isSelected} onChange={() => handleSelectRow(idx)} className="rounded border-gray-300 text-atd-blue focus:ring-atd-blue" />
-                          </div>
-                          <div className="w-8 px-1 py-2.5 flex-shrink-0">
-                            <ChevronRight className={`h-4 w-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                          </div>
-                          <div className="px-3 py-2.5 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <>
+                      <tr
+                        key={idx}
+                        className={`group cursor-pointer ${
+                          isSelected ? 'bg-blue-50' : isExpanded ? 'bg-amber-50' : idx % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50/50 hover:bg-gray-100/50'
+                        }`}
+                        onClick={() => setExpandedRow(isExpanded ? null : idx)}
+                      >
+                        <td className="px-3 py-2.5 align-top" onClick={(e) => e.stopPropagation()}>
+                          <input type="checkbox" checked={isSelected} onChange={() => handleSelectRow(idx)} className="rounded border-gray-300 text-atd-blue focus:ring-atd-blue" />
+                        </td>
+                        <td className="px-1 py-2.5 align-top text-gray-400">
+                          <ChevronRight className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                        </td>
+                        <td className="px-3 py-2.5 align-top" onClick={(e) => e.stopPropagation()}>
+                          <div className="space-y-1">
                             <select
                               value={rowStatus}
                               onChange={async (e) => {
@@ -704,32 +812,35 @@ export default function Orders() {
                                   setToast({ message: err.message || 'Failed to update status', type: 'error' });
                                 }
                               }}
-                              className="text-xs border-0 bg-transparent focus:ring-0 p-0 cursor-pointer"
+                              className="text-xs border border-gray-200 rounded bg-white p-1 cursor-pointer"
                             >
                               {ORDER_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
                             </select>
                             <StatusBadge status={rowStatus} />
                             <FulfillmentBadges fulfillment={rowFulfillment} />
                           </div>
-                          {colsToShow.map((header) => (
-                            <div key={header} className="px-3 py-2.5 text-gray-700 min-w-[100px]">
-                              <CopyCell value={row[header] ?? ''} />
-                            </div>
-                          ))}
-                        </div>
+                        </td>
+                        {colsToShow.map((header) => (
+                          <td key={`${idx}-${header}`} className="px-3 py-2.5 text-gray-700 align-top">
+                            <CopyCell value={row[header] ?? ''} enabled={isPriorityCopyHeader(header)} />
+                          </td>
+                        ))}
+                      </tr>
 
-                        {/* Expanded fulfillment panel */}
-                        {isExpanded && (
-                          <FulfillmentPanel
-                            orderNumber={orderNum}
-                            lineItem={lineItem}
-                            fulfillment={rowFulfillment || {}}
-                            onSave={handleSaveFulfillment}
-                            saving={savingFulfillment}
-                          />
-                        )}
-                      </td>
-                    </tr>
+                      {isExpanded && (
+                        <tr key={`expanded-${idx}`}>
+                          <td colSpan={colsToShow.length + 3} className="p-0">
+                            <FulfillmentPanel
+                              orderNumber={orderNum}
+                              lineItem={lineItem}
+                              fulfillment={rowFulfillment || {}}
+                              onSave={handleSaveFulfillment}
+                              saving={savingFulfillment}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   );
                 })
               )}

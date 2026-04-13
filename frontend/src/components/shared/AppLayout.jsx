@@ -88,8 +88,11 @@ const ERROR_TRANSLATIONS = {
   },
 };
 
-function translateHealthError(rawError) {
+function translateHealthError(rawError, aiMode = 'cloud') {
   const errStr = typeof rawError === 'string' ? rawError : rawError?.message || '';
+  if (aiMode === 'off' && ERROR_TRANSLATIONS.ai.match.test(errStr)) return null;
+  if (aiMode === 'cloud' && /ollama/i.test(errStr)) return null;
+  if (aiMode === 'ollama' && /(claude|api key)/i.test(errStr)) return null;
   for (const t of Object.values(ERROR_TRANSLATIONS)) {
     if (t.match.test(errStr)) return t;
   }
@@ -104,12 +107,13 @@ function translateHealthError(rawError) {
 // Global Health Banner — shown across all pages when system is unhealthy
 // ---------------------------------------------------------------------------
 
-function GlobalHealthBanner({ healthStatus, errors, onDismiss }) {
+function GlobalHealthBanner({ healthStatus, errors, aiMode, onDismiss }) {
   const navigate = useNavigate();
   if (!healthStatus || healthStatus === 'healthy' || healthStatus === 'ok') return null;
 
   const isUnhealthy = healthStatus === 'unhealthy';
-  const translated = errors?.length ? translateHealthError(errors[0]) : null;
+  const translated = errors?.length ? translateHealthError(errors[0], aiMode) : null;
+  if (errors?.length && !translated) return null;
   const bannerMsg = translated?.message || (isUnhealthy
     ? 'Critical services are down. Some features may not work correctly.'
     : 'Some services are degraded. Non-critical features may be limited.');
@@ -235,6 +239,7 @@ export default function AppLayout({ children }) {
   // Global health check — lightweight poll
   const [healthStatus, setHealthStatus] = useState(null);
   const [healthErrors, setHealthErrors] = useState([]);
+  const [healthAiMode, setHealthAiMode] = useState('cloud');
   const [healthDismissed, setHealthDismissed] = useState(false);
 
   const fetchHealth = useCallback(async () => {
@@ -242,6 +247,7 @@ export default function AppLayout({ children }) {
       const data = await api.getHealth();
       setHealthStatus(data?.status || null);
       setHealthErrors(data?.errors || []);
+      setHealthAiMode(data?.ai_mode || 'cloud');
       // Auto-show banner again if status changed to worse
       if (data?.status === 'unhealthy' || data?.status === 'degraded') {
         setHealthDismissed(false);
@@ -296,6 +302,7 @@ export default function AppLayout({ children }) {
           <GlobalHealthBanner
             healthStatus={healthStatus}
             errors={healthErrors}
+            aiMode={healthAiMode}
             onDismiss={() => setHealthDismissed(true)}
           />
         )}

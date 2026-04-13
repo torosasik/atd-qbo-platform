@@ -152,7 +152,13 @@ router.get('/orders', async (req, res, next) => {
       const cache = cacheSnap.data() || {};
       const cachedAtMs = cache.cachedAtMs || 0;
       if (cachedAtMs > 0 && now - cachedAtMs < CACHE_TTL_MS) {
-        sendSuccess(res, { headers: cache.headers || [], rows: cache.rows || [] });
+        sendSuccess(res, {
+          headers: cache.headers || [],
+          rows: cache.rows || [],
+          source: 'fresh-cache',
+          lastSyncedAt: cache.lastSuccessfulSyncAt || cache.updatedAt || null,
+          cachedAtMs,
+        });
         return;
       }
     }
@@ -171,20 +177,43 @@ router.get('/orders', async (req, res, next) => {
       return next(error);
     }
 
-    const raw = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
-    const { headers, rows } = transposeSheetData(raw.headers, raw.rows);
+    try {
+      const raw = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
+      const { headers, rows } = transposeSheetData(raw.headers, raw.rows);
 
-    await cacheRef.set(
-      {
+      await cacheRef.set(
+        {
+          headers,
+          rows,
+          cachedAtMs: now,
+          updatedAt: FieldValue.serverTimestamp(),
+          lastSuccessfulSyncAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      sendSuccess(res, {
         headers,
         rows,
+        source: 'live',
+        lastSyncedAt: new Date(now).toISOString(),
         cachedAtMs: now,
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
-
-    sendSuccess(res, { headers, rows });
+      });
+    } catch (liveErr) {
+      if (cacheSnap.exists) {
+        const cache = cacheSnap.data() || {};
+        sendSuccess(res, {
+          headers: cache.headers || [],
+          rows: cache.rows || [],
+          source: 'stale-cache',
+          lastSyncedAt: cache.lastSuccessfulSyncAt || cache.updatedAt || null,
+          cachedAtMs: cache.cachedAtMs || 0,
+          warning: `Live sheet pull failed. Showing last successful sync. ${liveErr.message}`,
+        });
+        return;
+      }
+      throw liveErr;
+    }
   } catch (err) {
     next(err);
   }

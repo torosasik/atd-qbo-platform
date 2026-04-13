@@ -27,6 +27,16 @@ async function saveToCache(docId, realmId, data) {
   });
 }
 
+function withCacheMeta(data, cacheData, stale = false) {
+  return {
+    data,
+    meta: {
+      lastSyncedAt: cacheData?.fetchedAt || null,
+      stale,
+    },
+  };
+}
+
 async function fetchFromQbo(realmId, query) {
   const accessToken = await getValidAccessToken();
   const qboBaseUrl = await getQboBaseUrl();
@@ -188,7 +198,8 @@ async function refreshCustomers(realmId) {
 // Public get functions (check cache first, refresh if stale)
 // ---------------------------------------------------------------------------
 
-async function getCachedVendors(realmId) {
+async function getCachedVendors(realmId, options = {}) {
+  const includeMeta = options.includeMeta === true;
   const db = getFirestore();
   const docId = `vendors_${realmId}`;
 
@@ -197,9 +208,14 @@ async function getCachedVendors(realmId) {
     const cacheData = docSnap.exists ? docSnap.data() : null;
 
     if (!cacheData || isCacheStale(cacheData.fetchedAt)) {
-      return await refreshVendors(realmId);
+      const vendors = await refreshVendors(realmId);
+      if (!includeMeta) return vendors;
+      const refreshedDoc = await db.collection(CACHE_COLLECTION).doc(docId).get();
+      const refreshedData = refreshedDoc.exists ? refreshedDoc.data() : null;
+      return withCacheMeta(vendors, refreshedData, false);
     }
 
+    if (includeMeta) return withCacheMeta(cacheData.data, cacheData, false);
     return cacheData.data;
   } catch (err) {
     await logAction('cache', 'get-cached-vendors', 'error', {
@@ -215,7 +231,9 @@ async function getCachedVendors(realmId) {
           realmId,
           message: 'Returning stale vendor cache after refresh failure.'
         });
-        return docSnap.data().data;
+        const fallbackData = docSnap.data();
+        if (includeMeta) return withCacheMeta(fallbackData.data, fallbackData, true);
+        return fallbackData.data;
       }
     } catch (fallbackErr) {
       console.error('[getCachedVendors] Error fetching stale cache fallback:', fallbackErr.message);
@@ -226,6 +244,7 @@ async function getCachedVendors(realmId) {
 }
 
 async function getCachedItems(realmId) {
+  const includeMeta = arguments[1]?.includeMeta === true;
   const db = getFirestore();
   const docId = `items_${realmId}`;
 
@@ -234,9 +253,14 @@ async function getCachedItems(realmId) {
     const cacheData = docSnap.exists ? docSnap.data() : null;
 
     if (!cacheData || isCacheStale(cacheData.fetchedAt)) {
-      return await refreshItems(realmId);
+      const items = await refreshItems(realmId);
+      if (!includeMeta) return items;
+      const refreshedDoc = await db.collection(CACHE_COLLECTION).doc(docId).get();
+      const refreshedData = refreshedDoc.exists ? refreshedDoc.data() : null;
+      return withCacheMeta(items, refreshedData, false);
     }
 
+    if (includeMeta) return withCacheMeta(cacheData.data, cacheData, false);
     return cacheData.data;
   } catch (err) {
     await logAction('cache', 'get-cached-items', 'error', {
@@ -251,7 +275,9 @@ async function getCachedItems(realmId) {
           realmId,
           message: 'Returning stale item cache after refresh failure.'
         });
-        return docSnap.data().data;
+        const fallbackData = docSnap.data();
+        if (includeMeta) return withCacheMeta(fallbackData.data, fallbackData, true);
+        return fallbackData.data;
       }
     } catch (fallbackErr) {
       console.error('[getCachedItems] Error fetching stale cache fallback:', fallbackErr.message);
@@ -263,6 +289,7 @@ async function getCachedItems(realmId) {
 }
 
 async function getCachedCustomers(realmId) {
+  const includeMeta = arguments[1]?.includeMeta === true;
   const db = getFirestore();
   const docId = `customers_${realmId}`;
 
@@ -271,9 +298,14 @@ async function getCachedCustomers(realmId) {
     const cacheData = docSnap.exists ? docSnap.data() : null;
 
     if (!cacheData || isCacheStale(cacheData.fetchedAt)) {
-      return await refreshCustomers(realmId);
+      const customers = await refreshCustomers(realmId);
+      if (!includeMeta) return customers;
+      const refreshedDoc = await db.collection(CACHE_COLLECTION).doc(docId).get();
+      const refreshedData = refreshedDoc.exists ? refreshedDoc.data() : null;
+      return withCacheMeta(customers, refreshedData, false);
     }
 
+    if (includeMeta) return withCacheMeta(cacheData.data, cacheData, false);
     return cacheData.data;
   } catch (err) {
     await logAction('cache', 'get-cached-customers', 'error', {
@@ -288,7 +320,9 @@ async function getCachedCustomers(realmId) {
           realmId,
           message: 'Returning stale customer cache after refresh failure.'
         });
-        return docSnap.data().data;
+        const fallbackData = docSnap.data();
+        if (includeMeta) return withCacheMeta(fallbackData.data, fallbackData, true);
+        return fallbackData.data;
       }
     } catch (fallbackErr) {
       console.error('[getCachedCustomers] Error fetching stale cache fallback:', fallbackErr.message);
@@ -335,6 +369,7 @@ async function fetchOpenInvoices(realmId, customerId) {
 }
 
 async function getCachedAccounts(realmId) {
+  const includeMeta = arguments[1]?.includeMeta === true;
   const db = getFirestore();
   const docId = `accounts_${realmId}`;
 
@@ -343,9 +378,14 @@ async function getCachedAccounts(realmId) {
     const cacheData = docSnap.exists ? docSnap.data() : null;
 
     if (!cacheData || isCacheStale(cacheData.fetchedAt)) {
-      return await refreshAccounts(realmId);
+      const accounts = await refreshAccounts(realmId);
+      if (!includeMeta) return accounts;
+      const refreshedDoc = await db.collection(CACHE_COLLECTION).doc(docId).get();
+      const refreshedData = refreshedDoc.exists ? refreshedDoc.data() : null;
+      return withCacheMeta(accounts, refreshedData, false);
     }
 
+    if (includeMeta) return withCacheMeta(cacheData.data, cacheData, false);
     return cacheData.data;
   } catch (err) {
     await logAction('cache', 'get-cached-accounts', 'error', {
@@ -360,7 +400,9 @@ async function getCachedAccounts(realmId) {
           realmId,
           message: 'Returning stale account cache after refresh failure.'
         });
-        return docSnap.data().data;
+        const fallbackData = docSnap.data();
+        if (includeMeta) return withCacheMeta(fallbackData.data, fallbackData, true);
+        return fallbackData.data;
       }
     } catch (fallbackErr) {
       console.error('[getCachedAccounts] Error fetching stale cache fallback:', fallbackErr.message);
