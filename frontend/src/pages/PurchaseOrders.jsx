@@ -1584,19 +1584,112 @@ function HistoryTab() {
 // Tab 4: Import from Sheets
 // ---------------------------------------------------------------------------
 function ImportFromSheetsTab() {
-  const [preview, setPreview] = useState({ data: null, loading: false, error: null });
+  const [preview, setPreview] = useState({ data: null, loading: false, error: null, code: null, fix: null });
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [showHowItWorks, setShowHowItWorks] = useState(true);
+  const [showInvalidReasons, setShowInvalidReasons] = useState(false);
+
+  const previewPayload = preview.data || null;
+  const rows = Array.isArray(previewPayload?.rows) ? previewPayload.rows : [];
+  const pos = Array.isArray(previewPayload?.pos) ? previewPayload.pos : [];
+  const diagnostics = previewPayload?.diagnostics || null;
+  const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+  const validRows = diagnostics?.validRows ?? 0;
+  const invalidRows = diagnostics?.invalidRows ?? 0;
+  const canImport = pos.length > 0;
+
+  const settingsLink = '/settings';
+
+  function getStateCard() {
+    if (preview.loading) {
+      return null;
+    }
+
+    if (!preview.data && !preview.error) {
+      return {
+        icon: '📋',
+        title: 'Ready to Load',
+        message: 'Click "Load from Google Sheets" to see what\'s in your connected sheet.',
+      };
+    }
+
+    const stateMap = {
+      NO_SHEET_CONFIGURED: {
+        icon: '⚠️',
+        title: 'No Sheet Connected',
+        message: 'You haven\'t connected a Google Sheet yet.',
+      },
+      SHEET_NOT_FOUND: {
+        icon: '❌',
+        title: 'Sheet Not Found',
+        message: 'The configured sheet ID doesn\'t match any Google Sheet. It may have been deleted or the ID is wrong.',
+      },
+      PERMISSION_DENIED: {
+        icon: '🔒',
+        title: 'Access Denied',
+        message: 'The app doesn\'t have permission to read this sheet. Share it with the service account.',
+      },
+      TAB_NOT_FOUND: {
+        icon: '⚠️',
+        title: 'Tab Not Found',
+        message: 'The tab name in your settings doesn\'t match any tab in the sheet.',
+      },
+      FETCH_FAILED: {
+        icon: '🔄',
+        title: 'Connection Failed',
+        message: 'Couldn\'t reach Google Sheets right now. This is usually temporary.',
+      },
+    };
+
+    if (preview.error) {
+      return stateMap[preview.code] || {
+        icon: '❌',
+        title: 'Could not load sheet data',
+        message: preview.error,
+      };
+    }
+
+    if (rows.length === 0) {
+      return {
+        icon: '📭',
+        title: 'Sheet is Empty',
+        message: 'Your Google Sheet is connected but has no data rows. Add data to the sheet and try again.',
+      };
+    }
+
+    if (validRows === 0) {
+      return {
+        icon: '⚠️',
+        title: 'No Importable Rows',
+        message: `Found ${rows.length} rows but none have the required fields (like Order #).`,
+      };
+    }
+
+    return null;
+  }
+
+  function goToPendingDrafts() {
+    const buttons = Array.from(document.querySelectorAll('button'));
+    const draftsTab = buttons.find((button) => button.textContent?.trim() === 'Pending Drafts');
+    if (draftsTab) draftsTab.click();
+  }
 
   async function handleLoadFromSheets() {
-    setPreview({ data: null, loading: true, error: null });
+    setPreview({ data: null, loading: true, error: null, code: null, fix: null });
     setImportResult(null);
     try {
       const res = await api.previewSheetData();
-      const rows = Array.isArray(res.rows) ? res.rows : [];
-      setPreview({ data: rows, loading: false, error: null });
+      const data = res.data || res;
+      setPreview({ data, loading: false, error: null, code: null, fix: null });
     } catch (err) {
-      setPreview({ data: null, loading: false, error: err.message || 'Failed to load from Google Sheets.' });
+      setPreview({
+        data: null,
+        loading: false,
+        error: err.message || 'Failed to load from Google Sheets.',
+        code: err.code || null,
+        fix: err.fix || null,
+      });
     }
   }
 
@@ -1605,73 +1698,146 @@ function ImportFromSheetsTab() {
     setImportResult(null);
     try {
       const res = await api.importFromSheets();
-      const count = res.imported ?? res.data?.imported ?? 0;
-      setImportResult({ type: 'success', message: `Imported ${count} PO${count !== 1 ? 's' : ''} as drafts.` });
+      const data = res.data || res;
+      const imported = data.imported ?? 0;
+      const skipped = data.skipped ?? 0;
+      const skippedReasons = Array.isArray(data.skippedReasons) ? data.skippedReasons : [];
+      setImportResult({ type: 'success', imported, skipped, skippedReasons });
     } catch (err) {
-      setImportResult({ type: 'error', message: err.message || 'Import failed.' });
+      setImportResult({
+        type: 'error',
+        message: err.message || 'Import failed.',
+        fix: err.fix || null,
+      });
     } finally {
       setImporting(false);
     }
   }
 
-  const columns = preview.data?.length > 0 ? Object.keys(preview.data[0]) : [];
+  const stateCard = getStateCard();
 
   return (
     <div>
-      <div className="mb-4">
+      <div className="mb-5">
         <h2 className="text-base font-semibold text-atd-dark">Import from Google Sheets</h2>
-        <p className="text-sm text-gray-500 mt-1">Load purchase order data from your configured Google Sheet.</p>
+        <p className="text-sm text-gray-500 mt-1">Pull order data from your connected Google Sheet and create draft purchase orders.</p>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm p-6 space-y-5">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="border border-blue-100 bg-blue-50 rounded-lg px-4 py-3">
           <button
-            onClick={handleLoadFromSheets}
-            disabled={preview.loading}
-            className="flex items-center gap-2 bg-atd-blue hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+            onClick={() => setShowHowItWorks((prev) => !prev)}
+            className="w-full flex items-center justify-between text-left"
           >
-            {preview.loading ? <LoadingSpinner size="sm" color="white" /> : <RefreshCw className="h-4 w-4" />}
-            Load from Google Sheets
+            <p className="text-sm font-semibold text-atd-dark">How It Works</p>
+            <ChevronDown className={`h-4 w-4 text-gray-500 transition-transform ${showHowItWorks ? 'rotate-180' : ''}`} />
           </button>
-          {preview.data && !importResult && (
-            <button
-              onClick={handleImportAll}
-              disabled={importing}
-              className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-            >
-              {importing ? <LoadingSpinner size="sm" color="white" /> : <Plus className="h-4 w-4" />}
-              Import All as Drafts
-            </button>
+          {showHowItWorks && (
+            <ol className="mt-2 list-decimal list-inside space-y-1 text-sm text-gray-700">
+              <li><span className="font-medium">Load from Google Sheets</span> reads your sheet and shows a preview of what was found.</li>
+              <li><span className="font-medium">Import All as Drafts</span> creates draft purchase orders from valid rows. Review and approve them in the Pending Drafts tab.</li>
+            </ol>
           )}
         </div>
 
-        {preview.error && (
-          <div className="flex items-start gap-3 bg-red-50 border border-red-300 rounded-lg px-4 py-3 text-red-800 text-sm">
-            <X className="h-5 w-5 flex-shrink-0 mt-0.5 text-red-500" />
-            {preview.error}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="border border-gray-200 rounded-lg p-4">
+            <button
+              onClick={handleLoadFromSheets}
+              disabled={preview.loading}
+              className="w-full flex items-center justify-center gap-2 bg-atd-blue hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+            >
+              {preview.loading ? <LoadingSpinner size="sm" color="white" /> : <RefreshCw className="h-4 w-4" />}
+              Load from Google Sheets
+            </button>
+            <p className="mt-2 text-xs text-gray-500">Reads your connected sheet and shows a preview.</p>
           </div>
-        )}
 
-        {importResult && (
-          <div className={`flex items-start gap-3 rounded-lg px-4 py-3 text-sm ${
-            importResult.type === 'success'
-              ? 'bg-green-50 border border-green-300 text-green-800'
-              : 'bg-red-50 border border-red-300 text-red-800'
-          }`}>
-            {importResult.type === 'success' ? (
-              <CheckCircle className="h-5 w-5 flex-shrink-0 mt-0.5 text-green-500" />
-            ) : (
-              <X className="h-5 w-5 flex-shrink-0 mt-0.5 text-red-500" />
+          {canImport && (
+            <div className="border border-gray-200 rounded-lg p-4">
+              <button
+                onClick={handleImportAll}
+                disabled={importing || !canImport}
+                className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+              >
+                {importing ? <LoadingSpinner size="sm" color="white" /> : <Plus className="h-4 w-4" />}
+                Import All as Drafts
+              </button>
+              <p className="mt-2 text-xs text-gray-500">Creates draft POs from the valid rows below.</p>
+            </div>
+          )}
+        </div>
+
+        {diagnostics && (
+          <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+            <p className="text-sm font-semibold text-atd-dark mb-3">Sheet Status</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+              <p><span className="text-gray-500">Connected Sheet ID:</span> <span className="font-mono">{String(diagnostics.sheetId || '').slice(0, 10)}...</span></p>
+              <p><span className="text-gray-500">Tab Name:</span> {diagnostics.tabName || '-'}</p>
+              <p><span className="text-gray-500">Last Checked:</span> {diagnostics.checkedAt ? formatDateTime(diagnostics.checkedAt) : '-'}</p>
+              <p><span className="text-gray-500">Total Rows:</span> {diagnostics.totalRows ?? 0}</p>
+              <p><span className="text-gray-500">Valid Rows:</span> <span className="text-green-700 font-medium">{diagnostics.validRows ?? 0}</span></p>
+              <p><span className="text-gray-500">Invalid Rows:</span> <span className="text-amber-700 font-medium">{diagnostics.invalidRows ?? 0}</span></p>
+            </div>
+
+            {Array.isArray(diagnostics.invalidReasons) && diagnostics.invalidReasons.length > 0 && (
+              <div className="mt-3">
+                <button
+                  onClick={() => setShowInvalidReasons((prev) => !prev)}
+                  className="text-sm text-atd-blue hover:underline"
+                >
+                  {showInvalidReasons ? 'Hide invalid row reasons' : 'Show invalid row reasons'}
+                </button>
+                {showInvalidReasons && (
+                  <ul className="mt-2 text-sm text-gray-700 list-disc list-inside">
+                    {diagnostics.invalidReasons.map((item, index) => (
+                      <li key={`${item.reason}-${index}`}>{item.reason}: {item.count}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )}
-            {importResult.message}
           </div>
         )}
 
-        {preview.data && preview.data.length > 0 && (
+        {stateCard && (
+          <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm">
+            <p className="text-lg mb-1">{stateCard.icon}</p>
+            <p className="font-semibold text-atd-dark">{stateCard.title}</p>
+            <p className="text-gray-600 mt-1">{stateCard.message}</p>
+            {preview.fix && <p className="text-gray-500 mt-2">{preview.fix}</p>}
+            {(preview.code === 'NO_SHEET_CONFIGURED' || preview.code === 'SHEET_NOT_FOUND' || preview.code === 'PERMISSION_DENIED' || preview.code === 'TAB_NOT_FOUND' || validRows === 0) && (
+              <Link to={settingsLink} className="inline-flex mt-3 text-atd-blue hover:underline">Go to Settings</Link>
+            )}
+            {preview.code === 'FETCH_FAILED' && (
+              <button onClick={handleLoadFromSheets} className="inline-flex mt-3 text-atd-blue hover:underline">Retry</button>
+            )}
+          </div>
+        )}
+
+        {importResult?.type === 'success' && (
+          <div className="rounded-lg px-4 py-3 text-sm bg-green-50 border border-green-300 text-green-800 space-y-1">
+            <p>✅ Imported {importResult.imported} draft purchase order{importResult.imported !== 1 ? 's' : ''}</p>
+            {importResult.skipped > 0 && (
+              <p>⚠️ Skipped {importResult.skipped} row/group{importResult.skipped !== 1 ? 's' : ''}{importResult.skippedReasons?.[0]?.reason ? ` (${importResult.skippedReasons[0].reason.toLowerCase()})` : ''}</p>
+            )}
+            <button onClick={goToPendingDrafts} className="text-atd-blue hover:underline">Go to Pending Drafts to review and approve them →</button>
+          </div>
+        )}
+
+        {importResult?.type === 'error' && (
+          <div className="rounded-lg px-4 py-3 text-sm bg-red-50 border border-red-300 text-red-800">
+            <p>{importResult.message}</p>
+            {importResult.fix && <p className="mt-1 text-red-700">{importResult.fix}</p>}
+          </div>
+        )}
+
+        {rows.length > 0 && (
           <div>
-            <p className="text-sm font-medium text-gray-700 mb-2">
-              Preview: {preview.data.length} row{preview.data.length !== 1 ? 's' : ''} found
-            </p>
+            <div className="rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 mb-3 text-sm text-gray-700">
+              <p className="font-medium">{pos.length} purchase order{pos.length !== 1 ? 's' : ''} from {rows.length} row{rows.length !== 1 ? 's' : ''} ready to import</p>
+              {invalidRows > 0 && <p className="mt-1 text-amber-700">{invalidRows} row{invalidRows !== 1 ? 's' : ''} will be skipped (missing order number or invalid quantity)</p>}
+            </div>
             <div className="overflow-x-auto max-h-96 border border-gray-200 rounded-lg">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 sticky top-0">
@@ -1682,7 +1848,7 @@ function ImportFromSheetsTab() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {preview.data.map((row, i) => (
+                  {rows.map((row, i) => (
                     <tr key={i} className="hover:bg-gray-50">
                       {columns.map((col) => (
                         <td key={col} className="px-4 py-2 text-gray-700 whitespace-nowrap">
@@ -1694,16 +1860,6 @@ function ImportFromSheetsTab() {
                 </tbody>
               </table>
             </div>
-          </div>
-        )}
-
-        {preview.data && preview.data.length === 0 && (
-          <p className="text-sm text-gray-400">No data rows found in sheet.</p>
-        )}
-
-        {!preview.data && !preview.loading && !preview.error && (
-          <div className="text-center py-10 text-gray-400 text-sm border-2 border-dashed border-gray-200 rounded-lg">
-            Click "Load from Google Sheets" to preview data from your configured sheet.
           </div>
         )}
       </div>

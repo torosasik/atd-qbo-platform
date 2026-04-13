@@ -96,6 +96,116 @@ function mapRowsForPoGrouping(rows = []) {
   });
 }
 
+function classifySheetsError(err) {
+  const status = err?.status || err?.code || err?.response?.status;
+  const message = String(err?.message || '').toLowerCase();
+  const reason = String(err?.response?.data?.error?.message || '').toLowerCase();
+  const combined = `${message} ${reason}`;
+
+  if (status === 404 || combined.includes('requested entity was not found')) {
+    return {
+      status: 404,
+      error: 'The configured Google Sheet was not found.',
+      code: 'SHEET_NOT_FOUND',
+      fix: 'Check that the Sheet ID in Settings is correct and the sheet has not been deleted.',
+    };
+  }
+
+  if (status === 403 || combined.includes('permission') || combined.includes('forbidden')) {
+    return {
+      status: 403,
+      error: 'Permission denied. The service account cannot access this sheet.',
+      code: 'PERMISSION_DENIED',
+      fix: 'Share the Google Sheet with the service account email, or check that the sheet is not restricted.',
+    };
+  }
+
+  if (combined.includes('unable to parse range') || combined.includes('range') && combined.includes('not found')) {
+    return {
+      status: 404,
+      error: 'The sheet tab was not found.',
+      code: 'TAB_NOT_FOUND',
+      fix: 'Check that the tab name in Settings matches an actual tab in your Google Sheet.',
+    };
+  }
+
+  if (
+    combined.includes('timeout')
+    || combined.includes('network')
+    || combined.includes('econnreset')
+    || combined.includes('enotfound')
+    || combined.includes('etimedout')
+    || combined.includes('eai_again')
+    || status === 'ECONNRESET'
+    || status === 'ENOTFOUND'
+    || status === 'ETIMEDOUT'
+  ) {
+    return {
+      status: 502,
+      error: 'Could not reach Google Sheets.',
+      code: 'FETCH_FAILED',
+      fix: 'Check your internet connection and try again. If the problem persists, Google Sheets may be temporarily unavailable.',
+    };
+  }
+
+  return {
+    status: 500,
+    error: err?.message || 'Failed to read Google Sheets data.',
+    code: 'SHEETS_ERROR',
+    fix: 'Try again. If this keeps happening, check your Google Sheets settings and service account access.',
+  };
+}
+
+function sendClassifiedSheetsError(res, err) {
+  const classified = classifySheetsError(err);
+  res.status(classified.status).json({
+    success: false,
+    error: classified.error,
+    code: classified.code,
+    fix: classified.fix,
+  });
+}
+
+function summarizeInvalidReasons(mappedRows = []) {
+  const counts = new Map();
+
+  for (const row of mappedRows) {
+    if (!String(row.orderNumber || '').trim()) {
+      counts.set('Missing order number', (counts.get('Missing order number') || 0) + 1);
+    }
+
+    if (!String(row.vendorName || '').trim()) {
+      counts.set('Missing vendor name', (counts.get('Missing vendor name') || 0) + 1);
+    }
+
+    const quantity = parseFloat(row.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      counts.set('No line items with valid quantity', (counts.get('No line items with valid quantity') || 0) + 1);
+    }
+  }
+
+  return Array.from(counts.entries()).map(([reason, count]) => ({ reason, count }));
+}
+
+function summarizeSkippedGroups(mappedRows = [], pos = []) {
+  const skippedCounts = new Map();
+  const rowsMissingOrderNumber = mappedRows.filter((row) => !String(row.orderNumber || '').trim()).length;
+  if (rowsMissingOrderNumber > 0) {
+    skippedCounts.set('Missing order number', rowsMissingOrderNumber);
+  }
+
+  const groupsWithoutValidQuantity = pos.filter((po) => {
+    const validLineCount = (po.lines || []).filter((line) => Number.isFinite(line.quantity) && line.quantity > 0).length;
+    return validLineCount === 0;
+  }).length;
+
+  if (groupsWithoutValidQuantity > 0) {
+    skippedCounts.set('No line items with valid quantity', groupsWithoutValidQuantity);
+  }
+
+  return Array.from(skippedCounts.entries()).map(([reason, count]) => ({ reason, count }));
+}
+
 // GET /sheets/test-connection
 router.get('/test-connection', async (req, res, next) => {
   try {
@@ -125,16 +235,40 @@ router.get('/preview', async (req, res, next) => {
     } = settings.google_sheets;
 
     if (!sheetId) {
-      const error = new Error('po_sheet_id is not configured in settings');
-      error.status = 400;
-      return next(error);
+      res.status(400).json({
+        success: false,
+        error: 'No Google Sheet is connected.',
+        code: 'NO_SHEET_CONFIGURED',
+        fix: 'Go to Settings > Google Sheets and enter your Sheet ID.',
+      });
+      return;
     }
 
-    const { headers, rows } = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
-    const mappedRows = mapRowsForPoGrouping(rows);
-    const pos = groupByPO(mappedRows, 'orderNumber');
+    try {
+      const { headers, rows } = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
+      const mappedRows = mapRowsForPoGrouping(rows);
+      const pos = groupByPO(mappedRows, 'orderNumber');
+      const validRows = mappedRows.filter((row) => String(row.orderNumber || '').trim()).length;
+      const invalidRows = Math.max(0, rows.length - validRows);
 
-    sendSuccess(res, { headers, rows, pos });
+      sendSuccess(res, {
+        headers,
+        rows,
+        pos,
+        diagnostics: {
+          sheetId,
+          tabName,
+          totalRows: rows.length,
+          validRows,
+          invalidRows,
+          poGroups: pos.length,
+          invalidReasons: summarizeInvalidReasons(mappedRows),
+          checkedAt: new Date().toISOString(),
+        },
+      });
+    } catch (err) {
+      sendClassifiedSheetsError(res, err);
+    }
   } catch (err) {
     next(err);
   }
@@ -231,38 +365,64 @@ router.post('/import', async (req, res, next) => {
     } = settings.google_sheets;
 
     if (!sheetId) {
-      const error = new Error('po_sheet_id is not configured in settings');
-      error.status = 400;
-      return next(error);
-    }
-
-    const { rows } = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
-    const mappedRows = mapRowsForPoGrouping(rows);
-    const pos = groupByPO(mappedRows, 'orderNumber');
-
-    if (pos.length === 0) {
-      sendSuccess(res, { imported: 0 }, 'No PO groups found in sheet');
+      res.status(400).json({
+        success: false,
+        error: 'No Google Sheet is connected.',
+        code: 'NO_SHEET_CONFIGURED',
+        fix: 'Go to Settings > Google Sheets and enter your Sheet ID.',
+      });
       return;
     }
 
-    const db = getFirestore();
-    const batch = db.batch();
-    const draftIds = [];
+    try {
+      const { rows } = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
+      const mappedRows = mapRowsForPoGrouping(rows);
+      const pos = groupByPO(mappedRows, 'orderNumber');
 
-    for (const po of pos) {
-      const ref = db.collection('po_drafts').doc();
-      draftIds.push(ref.id);
-      batch.set(ref, {
-        ...po,
-        status: 'pending',
-        source: 'google_sheets',
-        createdAt: FieldValue.serverTimestamp(),
+      const validPos = pos.filter((po) => {
+        const validLineCount = (po.lines || []).filter((line) => Number.isFinite(line.quantity) && line.quantity > 0).length;
+        return validLineCount > 0;
       });
+
+      const skippedReasons = summarizeSkippedGroups(mappedRows, pos);
+      const skipped = pos.length - validPos.length + mappedRows.filter((row) => !String(row.orderNumber || '').trim()).length;
+
+      if (validPos.length === 0) {
+        sendSuccess(res, {
+          imported: 0,
+          skipped,
+          draftIds: [],
+          skippedReasons,
+        }, 'No importable purchase orders were found in the sheet.');
+        return;
+      }
+
+      const db = getFirestore();
+      const batch = db.batch();
+      const draftIds = [];
+
+      for (const po of validPos) {
+        const ref = db.collection('po_drafts').doc();
+        draftIds.push(ref.id);
+        batch.set(ref, {
+          ...po,
+          status: 'pending',
+          source: 'google_sheets',
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
+
+      sendSuccess(res, {
+        imported: validPos.length,
+        skipped,
+        draftIds,
+        skippedReasons,
+      });
+    } catch (err) {
+      sendClassifiedSheetsError(res, err);
     }
-
-    await batch.commit();
-
-    sendSuccess(res, { imported: pos.length, draftIds });
   } catch (err) {
     next(err);
   }
