@@ -498,6 +498,8 @@ export default function Orders() {
     return searchState.indexes.map((idx) => searchableRows[idx]?.row).filter(Boolean);
   }, [baseRows, searchableRows, searchState]);
 
+  const colsToShow = visibleCols || headers;
+
   const colWidths = useMemo(() => {
     const widths = {};
     colsToShow.forEach((header) => {
@@ -593,7 +595,6 @@ export default function Orders() {
     });
   }
 
-  const colsToShow = visibleCols || headers;
   const allSelected = displayRows.length > 0 && selected.size === displayRows.length;
   const someSelected = selected.size > 0;
 
