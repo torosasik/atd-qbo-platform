@@ -94,6 +94,40 @@ async function fetchAllFromQbo(realmId, entity) {
   return { records: allRecords, intuitTid: lastIntuitTid };
 }
 
+/**
+ * Fetch a lightweight item lookup map (Id + Name only) from QBO.
+ * Uses targeted column selection to minimize memory usage vs SELECT *.
+ * Only fetches active Inventory/Service/NonInventory item types relevant to POs.
+ *
+ * @param {string} realmId
+ * @returns {Promise<{ records: Array<{Id: string, Name: string}>, intuitTid: string|null }>}
+ */
+async function fetchItemIdNameMap(realmId) {
+  const PAGE_SIZE = 1000;
+  const records = [];
+  let startPosition = 1;
+  let lastIntuitTid = null;
+
+  // Only select columns needed for PO validation/item matching
+  // Filter to item types commonly used on purchase orders
+  const query = `SELECT Id, Name, Type FROM Item WHERE Type IN ('Inventory', 'Service', 'NonInventory', 'OtherService') STARTPOSITION ${startPosition} MAXRESULTS ${PAGE_SIZE}`;
+
+  while (true) {
+    const { queryResponse, intuitTid } = await fetchFromQbo(
+      realmId,
+      `SELECT Id, Name, Type FROM Item WHERE Type IN ('Inventory', 'Service', 'NonInventory', 'OtherService') STARTPOSITION ${startPosition} MAXRESULTS ${PAGE_SIZE}`
+    );
+    lastIntuitTid = intuitTid;
+    const batch = queryResponse?.['Item'] || [];
+    records.push(...batch);
+
+    if (batch.length < PAGE_SIZE) break;
+    startPosition += PAGE_SIZE;
+  }
+
+  return { records, intuitTid: lastIntuitTid };
+}
+
 // ---------------------------------------------------------------------------
 // Refresh functions
 // ---------------------------------------------------------------------------
@@ -460,9 +494,78 @@ async function fetchUncategorizedExpenses(realmId) {
   }
 }
 
+/**
+ * Lightweight item lookup (Id + Name only) for PO validation.
+ * Uses targeted column selection to minimize memory vs full SELECT *.
+ * Falls back to stale cache on error, then to empty array.
+ *
+ * @param {string} realmId
+ * @returns {Promise<Array<{Id: string, Name: string, Type: string}>>}
+ */
+async function getCachedItemIdNameMap(realmId) {
+  const db = getFirestore();
+  const docId = `items_idname_${realmId}`;
+
+  try {
+    const docSnap = await db.collection(CACHE_COLLECTION).doc(docId).get();
+    const cacheData = docSnap.exists ? docSnap.data() : null;
+
+    if (!cacheData || isCacheStale(cacheData.fetchedAt)) {
+      const items = await refreshItemIdNameMap(realmId);
+      return items;
+    }
+
+    return cacheData.data || [];
+  } catch (err) {
+    await logAction('cache', 'get-cached-item-id-name-map', 'error', {
+      realmId,
+      error: err.message,
+    });
+
+    // Fallback: try stale cache
+    try {
+      const docSnap = await db.collection(CACHE_COLLECTION).doc(docId).get();
+      if (docSnap.exists) {
+        return docSnap.data().data || [];
+      }
+    } catch (fallbackErr) {
+      console.error('[getCachedItemIdNameMap] Stale fallback failed:', fallbackErr.message);
+    }
+
+    return [];
+  }
+}
+
+/**
+ * Refresh lightweight item Id+Name map and save to cache.
+ */
+async function refreshItemIdNameMap(realmId) {
+  try {
+    const { records: items, intuitTid } = await fetchItemIdNameMap(realmId);
+    const docId = `items_idname_${realmId}`;
+    await saveToCache(docId, realmId, items);
+
+    await logAction('cache', 'refresh-item-id-name-map', 'success', {
+      realmId,
+      count: items.length,
+      intuitTid,
+    });
+
+    return items;
+  } catch (err) {
+    await logAction('cache', 'refresh-item-id-name-map', 'error', {
+      realmId,
+      error: err.message,
+      intuitTid: err.intuitTid || null,
+    });
+    throw err;
+  }
+}
+
 module.exports = {
   getCachedVendors,
   getCachedItems,
+  getCachedItemIdNameMap,
   getCachedAccounts,
   getCachedCustomers,
   fetchOpenInvoices,
@@ -470,5 +573,5 @@ module.exports = {
   refreshVendors,
   refreshItems,
   refreshAccounts,
-  refreshCustomers
+  refreshCustomers,
 };

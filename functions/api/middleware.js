@@ -73,26 +73,38 @@ const retryOperation = async (operation, maxRetries = 3, delayMs = 1000) => {
   throw lastError;
 };
 
-// Shared line item schema
+// Shared line item schema — matches frontend payload field names exactly.
+// Frontend sends: itemId, itemName, sku, description, quantity, qty, unitPrice, unit
 const lineItemSchema = Joi.object({
-  itemId: Joi.string().trim().optional(),
+  itemId: Joi.string().trim().allow('').optional(),
+  itemName: Joi.string().trim().allow('').optional(),
+  sku: Joi.string().trim().allow('').optional(),
   description: Joi.string().trim().required(),
-  quantity: Joi.number().positive().required(),
-  rate: Joi.number().min(0).required(),
-  accountId: Joi.string().trim().optional(),
-});
+  quantity: Joi.number().positive().optional(),
+  qty: Joi.number().positive().optional(),
+  unitPrice: Joi.number().min(0).required(),
+  unit: Joi.string().trim().allow('').optional(),
+  accountId: Joi.string().trim().allow('').optional(),
+}).options({ stripUnknown: true });
 
 // Validation schemas
 const schemas = {
-  // PO create schema
+  // PO create schema — matches PurchaseOrders.jsx handleSubmit payload exactly.
+  // Frontend sends: poNumber, vendorId, vendorName, date, memo, vendorMessage,
+  //                  lines[{itemId, sku, description, quantity, unit, unitPrice}],
+  //                  autoApprove, aiEnabled
   poCreate: Joi.object({
-    vendorName: Joi.string().trim().min(1).required(),
+    vendorId: Joi.string().trim().allow('').optional(),
+    vendorName: Joi.string().trim().min(1).optional(),     // required if vendorId absent; validated in module
+    poNumber: Joi.string().trim().min(1).required(),
+    date: Joi.string().isoDate().optional(),               // frontend sends 'date'
+    txnDate: Joi.string().isoDate().optional(),            // legacy field name also accepted
+    memo: Joi.string().trim().allow('').optional(),
+    vendorMessage: Joi.string().trim().allow('').optional(),
     lines: Joi.array().items(lineItemSchema).min(1).required(),
-    txnDate: Joi.string().isoDate().optional(),
-    memo: Joi.string().trim().optional(),
     autoApprove: Joi.boolean().optional(),
     aiEnabled: Joi.boolean().optional(),
-  }),
+  }).options({ stripUnknown: true }),
 
   // Invoice create schema
   invoiceCreate: Joi.object({

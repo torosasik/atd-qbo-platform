@@ -4,7 +4,7 @@ const fetch = require('node-fetch');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { logAction } = require('../../core/logger');
 const { getValidAccessToken, getRealmId, getQboBaseUrl } = require('../../core/qbo-auth');
-const { getCachedVendors, getCachedItems } = require('../../core/cache');
+const { getCachedVendors, getCachedItems, getCachedItemIdNameMap } = require('../../core/cache');
 const { askAI } = require('../../core/ai-router');
 const { buildValidationPrompt } = require('./prompts');
 const { applyRules } = require('../../api/rules-engine');
@@ -77,7 +77,7 @@ async function validate(data, realmId) {
     }
   }
 
-  // Item matching: prefer itemId (direct QBO ID) over name lookup
+  // Item matching: use full item cache (1GB memory allows this)
   if (Array.isArray(d.lines)) {
     const items = await getCachedItems(realmId);
     d.lines.forEach((line, i) => {
@@ -169,6 +169,13 @@ function stripInternalFields(data) {
 
 // ---------------------------------------------------------------------------
 // buildPayload
+// Builds a QBO PurchaseOrder-compliant payload from validated form data.
+//
+// IMPORTANT: AccountRef is intentionally NOT included on ItemBasedExpenseLineDetail.
+// QBO Purchase Order API does not support AccountRef on line items (unlike Bill API).
+// Adding it causes "Property Name: failed to parse json object" errors.
+// For Inventory items, QBO resolves the expense account from the item automatically.
+// For non-Inventory items, the item's ExpenseAccountRef in QBO is used automatically.
 // ---------------------------------------------------------------------------
 
 function buildPayload(data, matchedVendor) {
@@ -207,9 +214,9 @@ function buildPayload(data, matchedVendor) {
     };
   });
 
-  // Build payload with new fields
+  // Build payload
   // Note: APAccountRef is omitted — QBO uses the company's default AP account.
-  // Hardcoding it by ID breaks companies that have a different account numbering.
+  // Hardcoding it by ID breaks companies that have different account numbering.
   const payload = {
     VendorRef: {
       value: String(matchedVendor.Id),

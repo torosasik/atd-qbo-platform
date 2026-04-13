@@ -125,5 +125,7 @@ app.use(async (err, req, res, next) => {
   });
 });
 
-exports.api = functions.https.onRequest(app);
-// deploy touch 1776044053
+exports.api = functions.runWith({
+  memory: '1GB',
+  timeoutSeconds: 540,
+}).https.onRequest(app);

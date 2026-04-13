@@ -652,7 +652,10 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, itemsLoading, v
   const filteredVendors = useMemo(() => {
     if (!vendorSearch.trim()) return vendors;
     const search = vendorSearch.toLowerCase();
-    return vendors.filter((v) => v.DisplayName?.toLowerCase().includes(search));
+    return vendors.filter((v) => {
+      const name = (v.DisplayName || v.qbo_name || '').toLowerCase();
+      return name.includes(search);
+    });
   }, [vendors, vendorSearch]);
 
   const vendorDropdownRef = useRef(null);
@@ -918,25 +921,29 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, itemsLoading, v
                   {filteredVendors.length === 0 ? (
                     <div className="px-3 py-2 text-sm text-gray-400">No vendors found.</div>
                   ) : (
-                    filteredVendors.map((v) => (
+                    filteredVendors.map((v) => {
+                      const vendorId = v.Id || v.qbo_id || '';
+                      const vendorName = v.DisplayName || v.qbo_name || '(unnamed)';
+                      return (
                       <button
-                        key={v.Id}
+                        key={vendorId}
                         type="button"
                         className="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-atd-blue hover:text-white transition-colors"
                         onClick={() => {
-                          setField('vendorId', v.Id);
-                          setField('vendorName', v.DisplayName);
+                          setField('vendorId', vendorId);
+                          setField('vendorName', vendorName);
                           // Look up email from QBO vendor data
-                          const qboVendor = qboVendors.find((qv) => String(qv.Id) === String(v.Id));
+                          const qboVendor = qboVendors.find((qv) => String(qv.Id) === String(vendorId));
                           const email = qboVendor?.PrimaryEmailAddr?.Address || '';
                           setField('vendorEmail', email);
                           setVendorOpen(false);
                           setVendorSearch('');
                         }}
                       >
-                        <div className="font-medium">{v.DisplayName}</div>
+                        <div className="font-medium">{vendorName}</div>
                       </button>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -2007,8 +2014,18 @@ export default function PurchaseOrders({ initialTab }) {
       let cachedMappingsRaw = getCached('vendorMappings');
       if (!activeVendors || !cachedMappingsRaw) {
         const mappingsRes = await api.getActiveVendors();
-        activeVendors = mappingsRes.vendors || mappingsRes.data?.vendors || [];
-        activeVendors = Array.isArray(activeVendors) ? activeVendors : [];
+        let rawVendors = mappingsRes.vendors || mappingsRes.data?.vendors || [];
+        rawVendors = Array.isArray(rawVendors) ? rawVendors : [];
+        // Normalize mapping-format vendors { qbo_id, qbo_name, ... } → { Id, DisplayName, ... }
+        // so the dropdown and form code can use a single set of property names.
+        activeVendors = rawVendors.map((v) => ({
+          Id: v.qbo_id || v.Id,
+          DisplayName: v.qbo_name || v.DisplayName,
+          PrimaryEmailAddr: v.PrimaryEmailAddr || {},
+          active: v.active,
+          shopify_code: v.shopify_code || '',
+          visible: v.visible !== false,
+        }));
         setCache('vendors', activeVendors);
         setCache('vendorMappings', mappingsRes);
       }

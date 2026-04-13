@@ -19,7 +19,9 @@
   },
   "functions": {
     "source": "functions",
-    "runtime": "nodejs22"
+    "runtime": "nodejs22",
+    "memory": "1GB",
+    "timeoutSeconds": 540
   },
   "firestore": {
     "rules": "firestore.rules",
