@@ -489,16 +489,6 @@ export default function Orders() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Reset selection/expansion when displayed row set changes (search/filter/sort)
-  const prevDisplayRowsLengthRef = useRef();
-  useEffect(() => {
-    if (prevDisplayRowsLengthRef.current !== undefined && prevDisplayRowsLengthRef.current !== displayRows.length) {
-      setSelected(new Set());
-      setExpandedRow(null);
-    }
-    prevDisplayRowsLengthRef.current = displayRows.length;
-  }, [displayRows.length]);
-
   // Filtered + sorted rows
   const baseRows = useMemo(() => {
     let result = rows;
@@ -536,6 +526,16 @@ export default function Orders() {
     if (!searchState.indexes) return baseRows;
     return searchState.indexes.map((idx) => searchableRows[idx]?.row).filter(Boolean);
   }, [baseRows, searchableRows, searchState]);
+
+  // Reset selection/expansion when displayed row set changes (search/filter/sort)
+  const prevDisplayRowsLengthRef = useRef();
+  useEffect(() => {
+    if (prevDisplayRowsLengthRef.current !== undefined && prevDisplayRowsLengthRef.current !== displayRows.length) {
+      setSelected(new Set());
+      setExpandedRow(null);
+    }
+    prevDisplayRowsLengthRef.current = displayRows.length;
+  }, [displayRows.length]);
 
   const colsToShow = visibleCols || headers;
 
