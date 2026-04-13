@@ -209,7 +209,9 @@ router.get('/mappings/active', async (req, res, next) => {
 
     sendSuccess(res, { vendors: activeVendors });
   } catch (err) {
-    next(err);
+    // Graceful fallback: return empty vendors instead of erroring
+    console.error('[vendor-routes] /mappings/active failed, returning empty list:', err.message);
+    sendSuccess(res, { vendors: [], _warning: 'vendor_data_unavailable' });
   }
 });
 

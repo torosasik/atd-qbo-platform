@@ -1,9 +1,39 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { RefreshCw, Save, Search, AlertCircle, Link2, Unplug } from 'lucide-react';
+import { RefreshCw, Save, Search, AlertCircle, Link2, Unplug, AlertTriangle } from 'lucide-react';
 import { api } from '../utils/api';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import Toast from '../components/shared/Toast';
 import Toggle from '../components/shared/Toggle';
+
+/**
+ * Parse a raw backend validation error string into structured per-vendor issues.
+ * Converts: "vendors[134].visible" is not allowed, "vendors[135].shopify_code" is not allowed to be empty
+ * Into:     [{ index: 134, field: 'visible', message: '...' }, ...]
+ */
+function parseValidationErrors(errorMsg) {
+  if (!errorMsg || typeof errorMsg !== 'string') return [];
+  const issues = [];
+  // Match patterns like "vendors[123].fieldName" followed by error description
+  const regex = /"vendors\[(\d+)\]\.([^"]+)"\s*([^,]+)/g;
+  let match;
+  while ((match = regex.exec(errorMsg)) !== null) {
+    const index = parseInt(match[1], 10);
+    const field = match[2];
+    const detail = match[3].trim();
+    let message;
+    if (detail.includes('not allowed')) {
+      message = `"${field}" is not recognized`;
+    } else if (detail.includes('empty') || detail.includes('required')) {
+      message = field === 'shopify_code'
+        ? 'Shopify code is required for active vendors'
+        : `${field} is required`;
+    } else {
+      message = detail;
+    }
+    issues.push({ index, field, message });
+  }
+  return issues;
+}
 
 export default function VendorManagement() {
   const [vendors, setVendors] = useState([]);
@@ -17,8 +47,20 @@ export default function VendorManagement() {
   const [toast, setToast] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [qboConnected, setQboConnected] = useState(null);
+  const [validationErrors, setValidationErrors] = useState([]);
 
   const hasUnsavedChanges = savedVendors !== null && JSON.stringify(vendors) !== JSON.stringify(savedVendors);
+
+  // Client-side pre-save validation: check active vendors have shopify_code
+  const preSaveIssues = useMemo(() => {
+    const issues = [];
+    vendors.forEach((v, i) => {
+      if (v.active && v.visible !== false && (!v.shopify_code || !v.shopify_code.trim())) {
+        issues.push({ index: i, field: 'shopify_code', message: 'Shopify code is required for active vendors' });
+      }
+    });
+    return issues;
+  }, [vendors]);
 
   const showToast = (message, type = 'success') => setToast({ message, type });
   const dismissToast = useCallback(() => setToast(null), []);
@@ -89,16 +131,42 @@ export default function VendorManagement() {
   }
 
   async function handleSave() {
+    // Clear previous validation errors
+    setValidationErrors([]);
+
+    // Client-side pre-save check: warn about active vendors missing shopify_code
+    if (preSaveIssues.length > 0) {
+      // Show inline warnings but still allow save — backend is source of truth
+      setValidationErrors(preSaveIssues);
+    }
+
     setSaving(true);
     try {
-      await api.put('/vendor/mappings', { vendors });
+      // Strip UI-only fields (_idx) before sending to backend
+      const payload = vendors.map(({ _idx, ...rest }) => rest);
+      await api.put('/vendor/mappings', { vendors: payload });
       setSavedVendors(JSON.parse(JSON.stringify(vendors)));
+      setValidationErrors([]);
       showToast('Vendor settings saved.');
     } catch (err) {
-      showToast(err.message || 'Failed to save vendor settings.', 'error');
+      // Parse validation errors into structured, user-friendly format
+      const errMsg = err.message || '';
+      if (errMsg.includes('Validation error') || err.code === 'VALIDATION_ERROR') {
+        const parsed = parseValidationErrors(errMsg);
+        setValidationErrors(parsed);
+        const vendorCount = new Set(parsed.map(p => p.index)).size;
+        showToast(`${vendorCount} vendor(s) need correction. See highlighted rows below.`, 'error');
+      } else {
+        showToast(errMsg || 'Failed to save vendor settings.', 'error');
+      }
     } finally {
       setSaving(false);
     }
+  }
+
+  /** Get validation error message for a specific vendor index + optional field */
+  function getVendorError(index, field) {
+    return validationErrors.find((e) => e.index === index && (!field || e.field === field));
   }
 
   function toggleActive(index) {
@@ -180,6 +248,30 @@ export default function VendorManagement() {
         <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-800 rounded-lg px-4 py-2.5 text-sm font-medium">
           <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse" />
           You have unsaved changes
+        </div>
+      )}
+
+      {/* Validation error summary */}
+      {validationErrors.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm">
+          <div className="flex items-start gap-2 text-red-800">
+            <AlertTriangle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-1">
+              <p className="font-semibold">Please fix the following vendor mapping issue(s):</p>
+              <ul className="list-disc list-inside space-y-0.5 text-red-700">
+                {[...new Set(validationErrors.map(e => e.index))].map((idx) => {
+                  const vendor = vendors[idx];
+                  const issue = validationErrors.find(e => e.index === idx);
+                  return (
+                    <li key={idx}>
+                      <strong>{vendor?.qbo_name || `Vendor #${idx + 1}`}</strong>
+                      : {issue?.message || 'Unknown error'}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </div>
         </div>
       )}
 
@@ -325,8 +417,10 @@ export default function VendorManagement() {
               <tbody className="divide-y divide-gray-50">
                 {filtered.map((v) => {
                   const isHidden = v.visible === false;
+                  const rowError = getVendorError(v._idx);
+                  const hasError = !!rowError;
                   return (
-                    <tr key={v._idx} className={`hover:bg-gray-50 ${isHidden ? 'opacity-40' : ''}`}>
+                    <tr key={v._idx} className={`hover:bg-gray-50 ${isHidden ? 'opacity-40' : ''} ${hasError ? 'bg-red-50' : ''}`}>
                       <td className="px-6 py-3">
                         <Toggle
                           id={`active-${v._idx}`}
@@ -345,6 +439,12 @@ export default function VendorManagement() {
                       </td>
                       <td className={`px-6 py-3 font-medium ${isHidden ? 'text-gray-400' : 'text-atd-dark'}`}>
                         {v.qbo_name}
+                        {hasError && (
+                          <span className="ml-2 inline-flex items-center gap-1 text-xs font-normal text-red-600">
+                            <AlertTriangle className="h-3 w-3" />
+                            {rowError.message}
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-3 text-xs text-gray-400">{v.qbo_id}</td>
                       <td className="px-6 py-3">
@@ -353,7 +453,11 @@ export default function VendorManagement() {
                           value={v.shopify_code || ''}
                           onChange={(e) => setShopifyCode(v._idx, e.target.value)}
                           placeholder="e.g., OTS"
-                          className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
+                          className={`w-full border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue ${
+                            hasError && rowError.field === 'shopify_code'
+                              ? 'border-red-400 bg-red-50 focus:ring-red-400'
+                              : 'border-gray-300'
+                          }`}
                         />
                       </td>
                     </tr>
@@ -363,8 +467,16 @@ export default function VendorManagement() {
             </table>
           </div>
 
-          {/* Save button */}
-          <div className="px-6 py-4 border-t border-gray-100">
+          {/* Save button area with optional warning */}
+          <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-4">
+            <div className="flex-1">
+              {preSaveIssues.length > 0 && validationErrors.length === 0 && (
+                <p className="text-xs text-amber-600 flex items-center gap-1">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  {preSaveIssues.length} active vendor(s) missing Shopify code — they will be saved but may need attention.
+                </p>
+              )}
+            </div>
             <button
               onClick={handleSave}
               disabled={saving}

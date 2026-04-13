@@ -169,8 +169,9 @@ const schemas = {
         qbo_id: Joi.string().trim().required(),
         qbo_name: Joi.string().trim().required(),
         active: Joi.boolean().required(),
-        shopify_code: Joi.string().trim().optional(),
-      })
+        shopify_code: Joi.string().trim().allow('').optional(),
+        visible: Joi.boolean().optional(),
+      }).options({ stripUnknown: true })
     ).required(),
   }),
 

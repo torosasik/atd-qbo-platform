@@ -121,7 +121,7 @@ function PaginationControls({ page, pageSize, totalItems, onPageChange, onPageSi
 // ---------------------------------------------------------------------------
 // Searchable Item Dropdown Component
 // ---------------------------------------------------------------------------
-function SearchableItemDropdown({ items, value, onChange, onCreateNew }) {
+function SearchableItemDropdown({ items, value, onChange, onCreateNew, vendorId, loading }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [isFocused, setIsFocused] = useState(false);
@@ -136,66 +136,77 @@ function SearchableItemDropdown({ items, value, onChange, onCreateNew }) {
   }
 
   // Advanced search: multi-token, prefix-aware, dimension-normalized, relevance-scored.
-  //
-  // Features:
-  //   1. Each search word is matched independently (any order)
-  //   2. Each token can match as an exact substring OR as a prefix of any word in the item
-  //   3. Dimension shorthand "12x24" is matched against "12 X 24" style names
-  //   4. Partial matches (most-but-not-all tokens) are shown below full matches
-  //   5. Results sorted by relevance; up to 30 shown
-  const filteredItems = (() => {
+  // When vendorId is provided, items linked to that vendor are sorted to the top.
+  const filteredItems = useMemo(() => {
+    if (loading) return [];
+
     const raw = search.trim().toLowerCase();
-    if (!raw) return items.slice(0, 30);
+    let baseItems = raw ? [] : items.slice(0, 30);
 
-    // Normalize dimension expressions: "12x24" → "12x24", "12 X 24" → "12x24"
-    const normalizeDims = (s) => s.replace(/(\d+)\s*[xX×]\s*(\d+)/g, '$1x$2');
+    if (raw) {
+      // Normalize dimension expressions: "12x24" → "12x24", "12 X 24" → "12x24"
+      const normalizeDims = (s) => s.replace(/(\d+)\s*[xX×]\s*(\d+)/g, '$1x$2');
 
-    const normalizedRaw = normalizeDims(raw);
-    const tokens = normalizedRaw.split(/\s+/).filter(Boolean);
+      const normalizedRaw = normalizeDims(raw);
+      const tokens = normalizedRaw.split(/\s+/).filter(Boolean);
 
-    // Returns a per-token match score: 2=exact substring, 1=prefix of a word, 0=no match
-    function tokenMatchScore(token, haystack, haystackWords) {
-      if (haystack.includes(token)) return 2;
-      if (haystackWords.some((w) => w.startsWith(token))) return 1;
-      return 0;
-    }
-
-    const scored = items.map((item) => {
-      const name = normalizeDims((item.Name || '').toLowerCase());
-      const sku  = normalizeDims((item.Sku  || '').toLowerCase());
-      const desc = normalizeDims((item.Description || '').toLowerCase());
-      const haystack = `${name} ${sku} ${desc}`;
-      const haystackWords = haystack.split(/[\s\-\/,()+]+/).filter(Boolean);
-
-      const tScores = tokens.map((t) => tokenMatchScore(t, haystack, haystackWords));
-      const matchedCount = tScores.filter((s) => s > 0).length;
-      if (matchedCount === 0) return null;
-
-      // Base relevance score
-      let score = tScores.reduce((sum, s) => sum + s, 0);
-
-      // Bonus for matching all tokens
-      if (matchedCount === tokens.length) {
-        score += 20;
-        // Extra bonus: full phrase found in name or sku
-        if (name.includes(normalizedRaw) || sku.includes(normalizedRaw)) score += 10;
-        // Extra bonus: name/sku starts with query
-        if (name.startsWith(normalizedRaw) || sku.startsWith(normalizedRaw)) score += 5;
-        // Extra bonus: tokens all in name (not just description)
-        if (tScores.every((_, i) => tokenMatchScore(tokens[i], name, name.split(/[\s\-\/,()+]+/).filter(Boolean)) > 0)) score += 3;
+      // Returns a per-token match score: 2=exact substring, 1=prefix of a word, 0=no match
+      function tokenMatchScore(token, haystack, haystackWords) {
+        if (haystack.includes(token)) return 2;
+        if (haystackWords.some((w) => w.startsWith(token))) return 1;
+        return 0;
       }
 
-      return { item, score, matchedCount };
-    }).filter(Boolean);
+      const scored = items.map((item) => {
+        const name = normalizeDims((item.Name || '').toLowerCase());
+        const sku  = normalizeDims((item.Sku  || '').toLowerCase());
+        const desc = normalizeDims((item.Description || '').toLowerCase());
+        const haystack = `${name} ${sku} ${desc}`;
+        const haystackWords = haystack.split(/[\s\-\/,()+]+/).filter(Boolean);
 
-    // Sort: full matches first (by score), then partial matches (by score)
-    scored.sort((a, b) => {
-      if (a.matchedCount !== b.matchedCount) return b.matchedCount - a.matchedCount;
-      return b.score - a.score;
-    });
+        const tScores = tokens.map((t) => tokenMatchScore(t, haystack, haystackWords));
+        const matchedCount = tScores.filter((s) => s > 0).length;
+        if (matchedCount === 0) return null;
 
-    return scored.slice(0, 30).map(({ item }) => item);
-  })();
+        // Base relevance score
+        let score = tScores.reduce((sum, s) => sum + s, 0);
+
+        // Bonus for matching all tokens
+        if (matchedCount === tokens.length) {
+          score += 20;
+          if (name.includes(normalizedRaw) || sku.includes(normalizedRaw)) score += 10;
+          if (name.startsWith(normalizedRaw) || sku.startsWith(normalizedRaw)) score += 5;
+          if (tScores.every((_, i) => tokenMatchScore(tokens[i], name, name.split(/[\s\-\/,()+]+/).filter(Boolean)) > 0)) score += 3;
+        }
+
+        return { item, score, matchedCount };
+      }).filter(Boolean);
+
+      // Sort: full matches first (by score), then partial matches (by score)
+      scored.sort((a, b) => {
+        if (a.matchedCount !== b.matchedCount) return b.matchedCount - a.matchedCount;
+        return b.score - a.score;
+      });
+
+      baseItems = scored.slice(0, 30).map(({ item }) => item);
+    }
+
+    // Vendor-linked prioritization: items whose PreferredVendorRef matches vendorId go first
+    if (vendorId) {
+      const vendorItems = [];
+      const otherItems = [];
+      for (const item of baseItems) {
+        if (String(item.PreferredVendorRef?.value || '') === String(vendorId)) {
+          vendorItems.push(item);
+        } else {
+          otherItems.push(item);
+        }
+      }
+      return [...vendorItems, ...otherItems];
+    }
+
+    return baseItems;
+  }, [items, search, vendorId]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -211,7 +222,14 @@ function SearchableItemDropdown({ items, value, onChange, onCreateNew }) {
   }, []);
 
   function handleSelect(item) {
-    onChange({ id: item.Id, name: item.Name, sku: item.Sku || '' });
+    onChange({
+      id: item.Id,
+      name: item.Name,
+      sku: item.Sku || '',
+      description: item.Description || '',
+      unitPrice: item.UnitPrice != null ? item.UnitPrice : (item.PurchaseCost || ''),
+      unit: item.Unit || '',
+    });
     setIsOpen(false);
     setIsFocused(false);
     setSearch('');
@@ -242,41 +260,68 @@ function SearchableItemDropdown({ items, value, onChange, onCreateNew }) {
         ref={inputRef}
         type="text"
         value={isFocused ? search : displayText(selectedItem)}
-        placeholder="Search by SKU or name..."
+        placeholder={loading ? 'Loading items...' : 'Search by SKU or name...'}
         onFocus={handleInputFocus}
         onChange={handleInputChange}
-        className="w-full border border-gray-200 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-atd-blue hover:border-gray-300 transition-colors"
+        disabled={loading}
+        className={`w-full border border-gray-200 rounded px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-atd-blue hover:border-gray-300 transition-colors ${loading ? 'opacity-60 cursor-wait' : ''}`}
       />
 
       {isOpen && (
         <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg">
           {/* Items list */}
           <div className="overflow-y-auto max-h-60">
-            {filteredItems.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-gray-400 text-center">
-                No items found
+            {loading ? (
+              <div className="px-3 py-4 text-sm text-gray-400 text-center flex items-center justify-center gap-2">
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                Loading items...
+              </div>
+            ) : filteredItems.length === 0 ? (
+              <div className="px-3 py-3 text-sm text-gray-400 text-center">
+                {items.length === 0 ? (
+                  <>
+                    No items available.{' '}
+                    <button
+                      type="button"
+                      className="text-atd-blue hover:underline font-medium"
+                      onClick={handleCreateClick}
+                    >
+                      Create a new item?
+                    </button>
+                  </>
+                ) : (
+                  'No items found'
+                )}
               </div>
             ) : (
-              filteredItems.map((item) => (
-                <button
-                  key={item.Id}
-                  type="button"
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-atd-blue hover:text-white transition-colors ${
-                    item.Id === value ? 'bg-blue-50 text-atd-blue' : 'text-gray-700'
-                  }`}
-                  onClick={() => handleSelect(item)}
-                >
-                  <div className="font-medium">{displayText(item)}</div>
-                  {item.Description && (
-                    <div className="text-xs opacity-70 truncate">{item.Description}</div>
-                  )}
-                </button>
-              ))
+              filteredItems.map((item) => {
+                const isVendorItem = vendorId && String(item.PreferredVendorRef?.value || '') === String(vendorId);
+                return (
+                  <button
+                    key={item.Id}
+                    type="button"
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-atd-blue hover:text-white transition-colors ${
+                      item.Id === value ? 'bg-blue-50 text-atd-blue' : 'text-gray-700'
+                    }`}
+                    onClick={() => handleSelect(item)}
+                  >
+                    <div className="font-medium flex items-center gap-1.5">
+                      {displayText(item)}
+                      {isVendorItem && (
+                        <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full font-normal">Vendor</span>
+                      )}
+                    </div>
+                    {item.Description && (
+                      <div className="text-xs opacity-70 truncate">{item.Description}</div>
+                    )}
+                  </button>
+                );
+              })
             )}
           </div>
 
           {/* Create new option */}
-          {search && (
+          {search && !loading && (
             <div className="border-t border-gray-100">
               <button
                 type="button"
@@ -477,7 +522,7 @@ function CreateNewItemModal({ isOpen, onClose, onSuccess, initialName }) {
 // ---------------------------------------------------------------------------
 // Tab 1: Create New
 // ---------------------------------------------------------------------------
-function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHistory, onRefreshItems, prefillRows, prefillHeaders }) {
+function CreateTab({ vendors, qboVendors, items, vendorsLoading, itemsLoading, vendorsError, itemsError, onSwitchToHistory, onRefreshItems, onRetryVendors, onRetryItems, prefillRows, prefillHeaders }) {
   const [form, setForm] = useState({
     vendorId: '',
     vendorName: '',
@@ -667,13 +712,16 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
       lines: f.lines.map((l) => {
         if (l._id !== id) return l;
         if (key === 'item') {
-          // val is { id, name, sku } from SearchableItemDropdown
+          // val is { id, name, sku, description, unitPrice, unit } from SearchableItemDropdown
           return {
             ...l,
             itemId: val.id,
             itemName: val.name,
-            sku: val.sku,
-            description: val.name,
+            sku: val.sku || '',
+            description: val.description || val.name || '',
+            unitPrice: val.unitPrice != null ? val.unitPrice : '',
+            unit: val.unit || l.unit || 'Sq Ft',
+            qty: l.qty || 1,
           };
         }
         return { ...l, [key]: val };
@@ -803,7 +851,29 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Vendor <span className="text-red-500">*</span>
           </label>
-          {!vendorsLoading && vendors.length === 0 ? (
+          {!vendorsLoading && vendorsError ? (
+            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 space-y-2">
+              <p className="text-sm font-medium text-red-800">
+                Failed to load vendors.
+              </p>
+              <p className="text-xs text-red-600">
+                {vendorsError}
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={onRetryVendors}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 hover:text-red-900 underline"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                  Retry
+                </button>
+                <Link to="/qbo-connect" className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 hover:text-red-900 underline">
+                  Check QBO Connection
+                </Link>
+              </div>
+            </div>
+          ) : !vendorsLoading && vendors.length === 0 ? (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3 space-y-2">
               <p className="text-sm font-medium text-yellow-800">
                 Cannot load vendors — QuickBooks connection may be unavailable.
@@ -828,7 +898,7 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
               className="w-full flex items-center justify-between border border-gray-300 rounded-lg px-3 py-2.5 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
             >
               <span className={form.vendorName ? 'text-atd-dark font-medium' : 'text-gray-400'}>
-                {form.vendorName || (vendorsLoading ? 'Loading vendors...' : 'Select a vendor')}
+                {form.vendorName || (vendorsLoading ? <span className="flex items-center gap-1.5"><RefreshCw className="h-3.5 w-3.5 animate-spin" />Loading vendors...</span> : 'Select a vendor')}
               </span>
               <ChevronDown className="h-4 w-4 text-gray-400" />
             </button>
@@ -961,6 +1031,23 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
           </button>
         </div>
 
+        {!itemsLoading && itemsError && (
+          <div className="mb-3 bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-yellow-600" />
+              <span className="text-sm text-yellow-800">Failed to load items: {itemsError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={onRetryItems}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-yellow-700 hover:text-yellow-900 underline"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Retry
+            </button>
+          </div>
+        )}
+
         <div>
           <table className="w-full text-sm">
             <thead>
@@ -983,23 +1070,14 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, onSwitchToHisto
                   <tr key={line._id}>
                     <td className="py-2 pr-2 text-gray-400 font-mono text-xs">{idx + 1}</td>
                     <td className="py-2 pr-2">
-                      {items.length === 0 ? (
-                        <button
-                          type="button"
-                          onClick={() => handleCreateNewItem('')}
-                          className="w-full text-left border border-gray-200 rounded px-2 py-1.5 text-sm text-atd-blue hover:bg-blue-50 flex items-center gap-1"
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                          Create first item
-                        </button>
-                      ) : (
-                        <SearchableItemDropdown
-                          items={items}
-                          value={line.itemId}
-                          onChange={(selected) => setLine(line._id, 'item', selected)}
-                          onCreateNew={handleCreateNewItem}
-                        />
-                      )}
+                      <SearchableItemDropdown
+                        items={items}
+                        value={line.itemId}
+                        onChange={(selected) => setLine(line._id, 'item', selected)}
+                        onCreateNew={handleCreateNewItem}
+                        vendorId={form.vendorId}
+                        loading={itemsLoading}
+                      />
                     </td>
                     <td className="py-2 pr-2">
                       <span className="text-sm text-gray-400">{line.sku || '-'}</span>
@@ -1583,7 +1661,7 @@ function HistoryTab() {
 // ---------------------------------------------------------------------------
 // Tab 4: Import from Sheets
 // ---------------------------------------------------------------------------
-function ImportFromSheetsTab() {
+function ImportFromSheetsTab({ onSwitchToDrafts }) {
   const [preview, setPreview] = useState({ data: null, loading: false, error: null, code: null, fix: null });
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
@@ -1670,9 +1748,7 @@ function ImportFromSheetsTab() {
   }
 
   function goToPendingDrafts() {
-    const buttons = Array.from(document.querySelectorAll('button'));
-    const draftsTab = buttons.find((button) => button.textContent?.trim() === 'Pending Drafts');
-    if (draftsTab) draftsTab.click();
+    if (onSwitchToDrafts) onSwitchToDrafts();
   }
 
   async function handleLoadFromSheets() {
@@ -1702,7 +1778,8 @@ function ImportFromSheetsTab() {
       const imported = data.imported ?? 0;
       const skipped = data.skipped ?? 0;
       const skippedReasons = Array.isArray(data.skippedReasons) ? data.skippedReasons : [];
-      setImportResult({ type: 'success', imported, skipped, skippedReasons });
+      const draftIds = Array.isArray(data.draftIds) ? data.draftIds : [];
+      setImportResult({ type: 'success', imported, skipped, skippedReasons, draftIds });
     } catch (err) {
       setImportResult({
         type: 'error',
@@ -1778,6 +1855,7 @@ function ImportFromSheetsTab() {
               <p><span className="text-gray-500">Total Rows:</span> {diagnostics.totalRows ?? 0}</p>
               <p><span className="text-gray-500">Valid Rows:</span> <span className="text-green-700 font-medium">{diagnostics.validRows ?? 0}</span></p>
               <p><span className="text-gray-500">Invalid Rows:</span> <span className="text-amber-700 font-medium">{diagnostics.invalidRows ?? 0}</span></p>
+              <p><span className="text-gray-500">PO Groups:</span> <span className="text-atd-blue font-medium">{diagnostics.poGroups ?? 0}</span></p>
             </div>
 
             {Array.isArray(diagnostics.invalidReasons) && diagnostics.invalidReasons.length > 0 && (
@@ -1820,6 +1898,16 @@ function ImportFromSheetsTab() {
             <p>✅ Imported {importResult.imported} draft purchase order{importResult.imported !== 1 ? 's' : ''}</p>
             {importResult.skipped > 0 && (
               <p>⚠️ Skipped {importResult.skipped} row/group{importResult.skipped !== 1 ? 's' : ''}{importResult.skippedReasons?.[0]?.reason ? ` (${importResult.skippedReasons[0].reason.toLowerCase()})` : ''}</p>
+            )}
+            {importResult.draftIds?.length > 0 && (
+              <div className="mt-2">
+                <p className="font-medium">Created Draft IDs:</p>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {importResult.draftIds.map((id) => (
+                    <span key={id} className="inline-block bg-white border border-green-200 rounded px-1.5 py-0.5 text-xs font-mono text-green-700">…{id.slice(-8)}</span>
+                  ))}
+                </div>
+              </div>
             )}
             <button onClick={goToPendingDrafts} className="text-atd-blue hover:underline">Go to Pending Drafts to review and approve them →</button>
           </div>
@@ -1888,40 +1976,46 @@ export default function PurchaseOrders({ initialTab }) {
   const [qboVendors, setQboVendors] = useState([]);
   const [items, setItems] = useState([]);
   const [vendorsLoading, setVendorsLoading] = useState(true);
+  const [itemsLoading, setItemsLoading] = useState(true);
+  const [vendorsError, setVendorsError] = useState(null);
+  const [itemsError, setItemsError] = useState(null);
 
   // Fetch items from API (used to refresh after creating a new item)
   async function fetchItems() {
     try {
+      setItemsError(null);
       const res = await api.getItems();
       const itemList = res.items || res.data || res;
       const parsed = Array.isArray(itemList) ? itemList : [];
       setCache('items', parsed);
       setItems(parsed);
-    } catch {
-      // silently fail, items will remain as they are
+    } catch (err) {
+      console.warn('[PO] Failed to load items:', err);
+      setItemsError(err.message || 'Failed to load items');
     }
   }
 
-  // Shared loader — checks cache first, fetches from API on miss
+  // Shared loader — checks cache first, fetches from API on miss (parallel)
   const loadLists = useCallback(async () => {
     setVendorsLoading(true);
-    try {
-      // --- Vendor Mappings (→ vendors dropdown) ---
+    setItemsLoading(true);
+    setVendorsError(null);
+
+    // Define async loaders for each data type
+    async function loadVendors() {
       let activeVendors = getCached('vendors');
       let cachedMappingsRaw = getCached('vendorMappings');
       if (!activeVendors || !cachedMappingsRaw) {
-        const mappingsRes = await api.getVendorMappings();
-        cachedMappingsRaw = mappingsRes;
-        setCache('vendorMappings', mappingsRes);
-        const allVendors = mappingsRes.data?.mappings?.vendors || mappingsRes.mappings?.vendors || [];
-        activeVendors = allVendors
-          .filter((v) => v.active && v.visible !== false)
-          .map((v) => ({ Id: v.qbo_id, DisplayName: v.qbo_name, shopify_code: v.shopify_code || '' }));
+        const mappingsRes = await api.getActiveVendors();
+        activeVendors = mappingsRes.vendors || mappingsRes.data?.vendors || [];
+        activeVendors = Array.isArray(activeVendors) ? activeVendors : [];
         setCache('vendors', activeVendors);
+        setCache('vendorMappings', mappingsRes);
       }
-      setVendors(activeVendors);
+      return activeVendors;
+    }
 
-      // --- QBO Vendors (full list for email lookup) ---
+    async function loadQboVendors() {
       let qboVendorList = getCached('qboVendors');
       if (!qboVendorList) {
         const vendorsRes = await api.getVendors();
@@ -1929,9 +2023,10 @@ export default function PurchaseOrders({ initialTab }) {
         qboVendorList = Array.isArray(qboVendorList) ? qboVendorList : [];
         setCache('qboVendors', qboVendorList);
       }
-      setQboVendors(qboVendorList);
+      return qboVendorList;
+    }
 
-      // --- Items ---
+    async function loadItems() {
       let itemList = getCached('items');
       if (!itemList) {
         const iRes = await api.getItems();
@@ -1939,12 +2034,46 @@ export default function PurchaseOrders({ initialTab }) {
         itemList = Array.isArray(itemList) ? itemList : [];
         setCache('items', itemList);
       }
-      setItems(itemList);
-    } catch (err) {
-      console.error('[PurchaseOrders] Failed to load lists:', err);
-    } finally {
-      setVendorsLoading(false);
+      return itemList;
     }
+
+    // Run all three in parallel
+    const [vendorsResult, qboVendorsResult, itemsResult] = await Promise.allSettled([
+      loadVendors(),
+      loadQboVendors(),
+      loadItems(),
+    ]);
+
+    // Process vendor results
+    if (vendorsResult.status === 'fulfilled') {
+      setVendors(vendorsResult.value);
+    } else {
+      console.error('[PurchaseOrders] Failed to load vendors:', vendorsResult.reason);
+      setVendorsError(vendorsResult.reason?.message || 'Failed to load vendors.');
+      // Fall back to cached data if available
+      const cached = getCached('vendors');
+      if (cached) setVendors(cached);
+    }
+    setVendorsLoading(false);
+
+    // Process QBO vendor results
+    if (qboVendorsResult.status === 'fulfilled') {
+      setQboVendors(qboVendorsResult.value);
+    } else {
+      console.error('[PurchaseOrders] Failed to load QBO vendors:', qboVendorsResult.reason);
+      const cached = getCached('qboVendors');
+      if (cached) setQboVendors(cached);
+    }
+
+    // Process item results
+    if (itemsResult.status === 'fulfilled') {
+      setItems(itemsResult.value);
+    } else {
+      console.error('[PurchaseOrders] Failed to load items:', itemsResult.reason);
+      const cached = getCached('items');
+      if (cached) setItems(cached);
+    }
+    setItemsLoading(false);
   }, []);
 
   useEffect(() => {
@@ -1966,11 +2095,11 @@ export default function PurchaseOrders({ initialTab }) {
         </div>
         <button
           onClick={handleRefreshData}
-          disabled={vendorsLoading}
+          disabled={vendorsLoading || itemsLoading}
           className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:text-atd-blue transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           title="Clear cached data and re-fetch from server"
         >
-          <RefreshCw className={`h-4 w-4 ${vendorsLoading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`h-4 w-4 ${vendorsLoading || itemsLoading ? 'animate-spin' : ''}`} />
           Refresh Data
         </button>
       </div>
@@ -1995,11 +2124,11 @@ export default function PurchaseOrders({ initialTab }) {
       </div>
 
       {activeTab === 0 && (
-        <CreateTab vendors={vendors} qboVendors={qboVendors} items={items} vendorsLoading={vendorsLoading} onSwitchToHistory={() => setActiveTab(2)} onRefreshItems={fetchItems} prefillRows={prefillRows} prefillHeaders={prefillHeaders} />
+        <CreateTab vendors={vendors} qboVendors={qboVendors} items={items} vendorsLoading={vendorsLoading} itemsLoading={itemsLoading} vendorsError={vendorsError} itemsError={itemsError} onSwitchToHistory={() => setActiveTab(2)} onRefreshItems={fetchItems} onRetryVendors={loadLists} onRetryItems={fetchItems} prefillRows={prefillRows} prefillHeaders={prefillHeaders} />
       )}
       {activeTab === 1 && <DraftsTab />}
       {activeTab === 2 && <HistoryTab />}
-      {activeTab === 3 && <ImportFromSheetsTab />}
+      {activeTab === 3 && <ImportFromSheetsTab onSwitchToDrafts={() => setActiveTab(1)} />}
     </div>
   );
 }

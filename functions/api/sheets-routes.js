@@ -120,7 +120,7 @@ function classifySheetsError(err) {
     };
   }
 
-  if (combined.includes('unable to parse range') || combined.includes('range') && combined.includes('not found')) {
+  if (combined.includes('unable to parse range') || (combined.includes('range') && combined.includes('not found'))) {
     return {
       status: 404,
       error: 'The sheet tab was not found.',
@@ -251,6 +251,8 @@ router.get('/preview', async (req, res, next) => {
       const validRows = mappedRows.filter((row) => String(row.orderNumber || '').trim()).length;
       const invalidRows = Math.max(0, rows.length - validRows);
 
+      const code = rows.length === 0 ? 'SHEET_EMPTY' : validRows === 0 ? 'NO_VALID_ROWS' : 'READY';
+
       sendSuccess(res, {
         headers,
         rows,
@@ -264,6 +266,7 @@ router.get('/preview', async (req, res, next) => {
           poGroups: pos.length,
           invalidReasons: summarizeInvalidReasons(mappedRows),
           checkedAt: new Date().toISOString(),
+          code,
         },
       });
     } catch (err) {
@@ -385,12 +388,16 @@ router.post('/import', async (req, res, next) => {
       });
 
       const skippedReasons = summarizeSkippedGroups(mappedRows, pos);
-      const skipped = pos.length - validPos.length + mappedRows.filter((row) => !String(row.orderNumber || '').trim()).length;
+      const skippedGroups = pos.length - validPos.length;
+      const skippedRows = mappedRows.filter((row) => !String(row.orderNumber || '').trim()).length;
+      const skipped = skippedGroups + skippedRows;
 
       if (validPos.length === 0) {
         sendSuccess(res, {
           imported: 0,
           skipped,
+          skippedGroups,
+          skippedRows,
           draftIds: [],
           skippedReasons,
         }, 'No importable purchase orders were found in the sheet.');
@@ -417,6 +424,8 @@ router.post('/import', async (req, res, next) => {
       sendSuccess(res, {
         imported: validPos.length,
         skipped,
+        skippedGroups,
+        skippedRows,
         draftIds,
         skippedReasons,
       });

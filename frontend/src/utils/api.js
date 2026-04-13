@@ -77,6 +77,7 @@ export const api = {
 
   getVendors: () => api.get('/vendors'),
   getVendorMappings: () => api.get('/vendor/mappings'),
+  getActiveVendors: () => api.get('/vendor/mappings/active'),
   getItems: () => api.get('/items'),
   createItem: (body) => api.post('/items/create', body),
 

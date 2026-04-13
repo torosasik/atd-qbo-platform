@@ -5,7 +5,7 @@
  * English comments only.
  */
 const CACHE_PREFIX = 'atd_qbo_cache_';
-const DEFAULT_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 export function getCached(key) {
   try {

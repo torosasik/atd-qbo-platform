@@ -12,5 +12,8 @@
     "emulate": "firebase emulators:start"
   },
   "author": "American Tile Depot",
-  "license": "PRIVATE"
+  "license": "PRIVATE",
+  "devDependencies": {
+    "playwright": "^1.59.1"
+  }
 }
