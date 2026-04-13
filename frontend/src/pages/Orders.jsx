@@ -51,6 +51,7 @@ const SOURCE_OPTIONS = [
 const MANDATORY_COLUMNS = ['Order #', 'Item Name', 'Qty', 'SKU'];
 const COL_PREFS_KEY = 'atd.orders.column_prefs.v1';
 const ORDERS_CACHE_KEY = 'atd.orders.last_payload.v1';
+const ORDERS_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 const PRIORITY_COPY_HEADERS = new Set([
   'sku',
@@ -147,14 +148,34 @@ function CopyCell({ value, enabled = false }) {
   const [copied, setCopied] = useState(false);
   function handleCopy(e) {
     e.stopPropagation();
-    navigator.clipboard.writeText(String(value || '')).then(() => {
+    const text = String(value || '');
+    const showFeedback = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+    };
+    navigator.clipboard.writeText(text)
+      .then(() => showFeedback())
+      .catch(() => {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          ta.style.top = '-9999px';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          showFeedback();
+        } catch (fallbackErr) {
+          console.error('CopyCell: both clipboard APIs failed', fallbackErr);
+        }
+      });
   }
   return (
     <span className="group relative inline-flex items-center gap-1 max-w-full">
-      <span className="truncate">{value}</span>
+      <span className="truncate" title={value || ''}>{value}</span>
       {enabled && (
       <button
         onClick={handleCopy}
@@ -433,6 +454,7 @@ export default function Orders() {
         rows: nextRows,
         lastSyncedAt: ordersData.lastSyncedAt || null,
         source: ordersData.source || 'live',
+        cachedAt: new Date().toISOString(),
       }));
       if (ordersData.warning) {
         setToast({ message: ordersData.warning, type: 'error' });
@@ -446,7 +468,14 @@ export default function Orders() {
           setRows(parsed.rows || []);
           setLastSyncedAt(parsed.lastSyncedAt || null);
           setOrdersDataSource('stale-local-cache');
-          setError('Live pull failed. Showing last successful synced snapshot.');
+          let errMsg = 'Live pull failed. Showing last successful synced snapshot.';
+          if (parsed.cachedAt) {
+            const ageMs = Date.now() - new Date(parsed.cachedAt).getTime();
+            if (ageMs > ORDERS_CACHE_TTL_MS) {
+              errMsg += ' (cache is old — sync may have failed)';
+            }
+          }
+          setError(errMsg);
         } catch {
           setError(err.message || 'Failed to load orders');
         }
@@ -459,6 +488,16 @@ export default function Orders() {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Reset selection/expansion when displayed row set changes (search/filter/sort)
+  const prevDisplayRowsLengthRef = useRef();
+  useEffect(() => {
+    if (prevDisplayRowsLengthRef.current !== undefined && prevDisplayRowsLengthRef.current !== displayRows.length) {
+      setSelected(new Set());
+      setExpandedRow(null);
+    }
+    prevDisplayRowsLengthRef.current = displayRows.length;
+  }, [displayRows.length]);
 
   // Filtered + sorted rows
   const baseRows = useMemo(() => {
@@ -481,8 +520,8 @@ export default function Orders() {
   }, [rows, statuses, showFulfilled, sortKey, sortDir, orderNumHeader, lineItemHeader]);
 
   const searchableRows = useMemo(() => {
-    return baseRows.map((row) => ({
-      __index: baseRows.indexOf(row),
+    return baseRows.map((row, __index) => ({
+      __index,
       row,
       productName: String(itemNameHeader ? row[itemNameHeader] ?? '' : ''),
       itemName: String(itemNameHeader ? row[itemNameHeader] ?? '' : ''),
@@ -682,6 +721,16 @@ export default function Orders() {
         </div>
       )}
 
+      {/* Stale cache warning banner */}
+      {ordersDataSource && ordersDataSource.includes('stale') && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 mb-4 text-sm" role="alert">
+          <p className="font-medium">⚠ Showing outdated cached data</p>
+          <p className="text-xs mt-1">
+            The latest data could not be loaded. Information may be up to {formatTimestamp(lastSyncedAt) || 'an unknown time'} old. Try refreshing later.
+          </p>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex flex-wrap items-start gap-3">
         <FuzzySearch items={searchableRows} totalCount={baseRows.length} onResultsChange={setSearchState} />
@@ -788,7 +837,7 @@ export default function Orders() {
                   return (
                     <>
                       <tr
-                        key={idx}
+                        key={`${orderNumHeader ? row[orderNumHeader] || idx : idx}-${lineItemHeader ? row[lineItemHeader] || idx : idx}`}
                         className={`group cursor-pointer ${
                           isSelected ? 'bg-blue-50' : isExpanded ? 'bg-amber-50' : idx % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50/50 hover:bg-gray-100/50'
                         }`}
@@ -829,7 +878,7 @@ export default function Orders() {
                       </tr>
 
                       {isExpanded && (
-                        <tr key={`expanded-${idx}`}>
+                        <tr key={`expanded-${orderNumHeader ? row[orderNumHeader] || idx : idx}-${lineItemHeader ? row[lineItemHeader] || idx : idx}`}>
                           <td colSpan={colsToShow.length + 3} className="p-0">
                             <FulfillmentPanel
                               orderNumber={orderNum}
