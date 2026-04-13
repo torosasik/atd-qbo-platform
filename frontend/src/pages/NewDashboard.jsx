@@ -402,10 +402,43 @@ function SettingsButton() {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  function normalizeAi(ai = {}) {
+    const mode = ai.mode || (ai.enabled === false ? 'off' : (ai.ollama_enabled === false ? 'cloud' : 'ollama'));
+    return { ...ai, mode };
+  }
+
+  function buildNestedUpdate(path, value) {
+    const keys = path.split('.');
+    const root = {};
+    let cursor = root;
+    for (let i = 0; i < keys.length - 1; i++) {
+      cursor[keys[i]] = {};
+      cursor = cursor[keys[i]];
+    }
+    cursor[keys[keys.length - 1]] = value;
+    return root;
+  }
+
+  function mergeNestedState(prev, path, value) {
+    const keys = path.split('.');
+    const next = { ...(prev || {}) };
+    let cursor = next;
+    for (let i = 0; i < keys.length - 1; i++) {
+      cursor[keys[i]] = { ...(cursor[keys[i]] || {}) };
+      cursor = cursor[keys[i]];
+    }
+    cursor[keys[keys.length - 1]] = value;
+    return next;
+  }
+
   useEffect(() => {
     if (isOpen) {
       api.getSettings()
-        .then((r) => setSettings(r.settings))
+        .then((r) => {
+          const nextSettings = r.settings || {};
+          nextSettings.ai = normalizeAi(nextSettings.ai || {});
+          setSettings(nextSettings);
+        })
         .catch(() => {})
         .finally(() => setLoading(false));
     }
@@ -413,8 +446,29 @@ function SettingsButton() {
 
   async function handleSave(key, value) {
     try {
-      await api.updateSettings({ [key]: value });
-      setSettings((s) => ({ ...s, [key]: value }));
+      await api.updateSettings(buildNestedUpdate(key, value));
+      setSettings((s) => {
+        const merged = mergeNestedState(s, key, value);
+        if (merged.ai) {
+          merged.ai = normalizeAi(merged.ai);
+        }
+        return merged;
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  async function handleAiModeChange(mode) {
+    try {
+      await api.updateSettings({ ai: { mode } });
+      setSettings((s) => {
+        const nextAi = normalizeAi({ ...(s?.ai || {}), mode });
+        return {
+          ...(s || {}),
+          ai: nextAi,
+        };
+      });
     } catch (err) {
       console.error(err);
     }
@@ -473,14 +527,30 @@ function SettingsButton() {
               </div>
               <div>
                 <h3 className="font-medium text-atd-dark mb-3">AI Review</h3>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Enable AI Review</span>
-                  <button
-                    onClick={() => handleSave('ai.enabled', !settings?.ai?.enabled)}
-                    className={`w-12 h-6 rounded-full transition-colors ${settings?.ai?.enabled ? 'bg-atd-blue' : 'bg-gray-300'}`}
-                  >
-                    <div className={`w-5 h-5 bg-white rounded-full transition-transform ${settings?.ai?.enabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
-                  </button>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">AI Mode</label>
+                    <select
+                      value={settings?.ai?.mode || 'cloud'}
+                      onChange={(e) => handleAiModeChange(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
+                    >
+                      <option value="off">AI Off</option>
+                      <option value="ollama">Local Ollama AI</option>
+                      <option value="cloud">Cloud/API AI</option>
+                    </select>
+                  </div>
+                  {settings?.ai?.mode === 'ollama' && (
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-1">Ollama URL</label>
+                      <input
+                        type="text"
+                        defaultValue={settings?.ai?.ollama_url || 'http://localhost:11434'}
+                        onBlur={(e) => handleSave('ai.ollama_url', e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </>

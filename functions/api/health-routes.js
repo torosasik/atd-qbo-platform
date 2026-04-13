@@ -167,7 +167,11 @@ router.get('/', async (req, res) => {
     errors.push('Failed to read QBO token status. Check Firestore access.');
   }
 
-  const aiMode = settings.ai?.mode || 'cloud';
+  const aiFeaturesDisabled = settings.features?.ai_review === false && settings.features?.ai_chat === false;
+  const aiExplicitlyDisabled = settings.ai?.enabled === false;
+  const aiMode = (aiFeaturesDisabled || aiExplicitlyDisabled)
+    ? 'off'
+    : (settings.ai?.mode || 'cloud');
   const ollamaUrl = settings.ai?.ollama_url || 'http://localhost:11434';
   const ollamaModel = settings.ai?.ollama_model || 'llama3';
   const claudeModel = settings.ai?.claude_model || 'claude-sonnet-4-20250514';
@@ -337,6 +341,7 @@ router.get('/', async (req, res) => {
     status: overallStatus,
     timestamp: new Date().toISOString(),
     version: '0.1.0',
+    ai_mode: aiMode,
     services,
     errors,
   });
