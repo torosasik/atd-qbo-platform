@@ -83,8 +83,19 @@ router.get('/', async (req, res, next) => {
       query = query.where('active', '==', active === 'true');
     }
 
-    const snapshot = await query.orderBy('updated_at', 'desc').get();
-    const rules = snapshot.docs.map((doc) => normalizeRuleDoc(doc.id, doc.data()));
+    // When multiple filters are applied, Firestore may need a composite index.
+    // Sort in JavaScript to avoid FAILED_PRECONDITION errors from missing indexes.
+    const whereCount = [vendor, type, active === 'true' || active === 'false'].filter(Boolean).length;
+    const snapshot = await query.get();
+    let rules = snapshot.docs.map((doc) => normalizeRuleDoc(doc.id, doc.data()));
+
+    // Sort by updated_at desc in JavaScript
+    rules.sort((a, b) => {
+      const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+      const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+      return bTime - aTime;
+    });
+
     sendSuccess(res, { rules });
   } catch (err) {
     next(err);
