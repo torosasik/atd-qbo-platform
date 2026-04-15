@@ -10,50 +10,6 @@ import InfoTooltip from '../components/shared/InfoTooltip';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-const COLUMNS = [
-  'A','B','C','D','E','F','G','H','I','J','K','L','M',
-  'N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
-  'AA','AB','AC','AD','AE','AF','AG','AH','AI',
-];
-
-const COLUMN_MAPPING_FIELDS = [
-  { key: 'status', label: 'Status' },
-  { key: 'date', label: 'Date' },
-  { key: 'time', label: 'Time' },
-  { key: 'lastOrderedOn', label: 'Last Ordered On' },
-  { key: 'lastOrderNumber', label: 'Last Order #' },
-  { key: 'continuation', label: 'Continuation' },
-  { key: 'orderNumber', label: 'Order #' },
-  { key: 'lineItem', label: 'Line Item #' },
-  { key: 'customerName', label: 'Customer' },
-  { key: 'customerEmail', label: 'Email' },
-  { key: 'vendorName', label: 'Vendor' },
-  { key: 'sku', label: 'SKU' },
-  { key: 'variantId', label: 'Variant ID' },
-  { key: 'itemDescription', label: 'Item Name' },
-  { key: 'aka', label: 'AKA' },
-  { key: 'requiredSize', label: 'Required Size' },
-  { key: 'quantity', label: 'Qty' },
-  { key: 'currentQty', label: 'Current Qty' },
-  { key: 'unit', label: 'Unit' },
-  { key: 'sqFt', label: 'Sq. Ft.' },
-  { key: 'pieces', label: 'Pieces' },
-  { key: 'overage', label: 'Overage' },
-  { key: 'unitPrice', label: 'Price' },
-  { key: 'cost', label: 'Cost' },
-  { key: 'subtotal', label: 'Subtotal' },
-  { key: 'stateZipcode', label: 'State/Zipcode' },
-  { key: 'shippingType', label: 'Shipping Type' },
-  { key: 'shippingCost', label: 'Shipping Cost' },
-  { key: 'orderTotal', label: 'Order Total' },
-  { key: 'orderTags', label: 'Order Tags' },
-  { key: 'inventoryQty', label: 'Inventory Qty' },
-  { key: 'measuringUnit', label: 'Measuring Unit' },
-  { key: 'tilesPerBox', label: 'Tiles Per Box' },
-  { key: 'tileSizeCoverage', label: 'Tile Size / Coverage' },
-  { key: 'boxAreaCoverage', label: 'Box Area / Coverage' },
-];
-
 const MODULE_ROWS = [
   { key: 'purchase_order', label: 'Purchase Orders', available: true },
   { key: 'invoice', label: 'Invoices', available: true },
@@ -86,17 +42,6 @@ const BACKEND_DEFAULTS = {
     po_sheet_tab: 'Sheet1',
     header_row: 1,
     data_start_row: 2,
-    po_column_mapping: {
-      status: 'A', date: 'B', time: 'C', lastOrderedOn: 'D', lastOrderNumber: 'E',
-      continuation: 'F', orderNumber: 'G', lineItem: 'H', customerName: 'I',
-      customerEmail: 'J', vendorName: 'K', sku: 'L', variantId: 'M',
-      itemDescription: 'N', aka: 'O', requiredSize: 'P', quantity: 'Q',
-      currentQty: 'R', unit: 'S', sqFt: 'T', pieces: 'U', overage: 'V',
-      unitPrice: 'W', cost: 'X', subtotal: 'Y', stateZipcode: 'Z',
-      shippingType: 'AA', shippingCost: 'AB', orderTotal: 'AC', orderTags: 'AD',
-      inventoryQty: 'AE', measuringUnit: 'AF', tilesPerBox: 'AG',
-      tileSizeCoverage: 'AH', boxAreaCoverage: 'AI',
-    },
   },
   ai: {
     mode: 'cloud',
@@ -459,7 +404,7 @@ export default function Settings() {
   const feats = settings.features || {};
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-6">
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-atd-dark">Settings</h1>
@@ -547,6 +492,8 @@ export default function Settings() {
         })}
       </SectionCard>
 
+      {/* Row: Google Sheets + QBO */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Section 1: Google Sheets */}
       <SectionCard
         title="Google Sheets Connection"
@@ -557,7 +504,6 @@ export default function Settings() {
               po_sheet_tab: gs.po_sheet_tab,
               header_row: gs.header_row,
               data_start_row: gs.data_start_row,
-              po_column_mapping: gs.po_column_mapping,
             },
           })
         }
@@ -607,43 +553,6 @@ export default function Settings() {
             className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
           />
         </FieldRow>
-
-        <div>
-          <p className="text-sm font-medium text-gray-700 mb-3 flex items-center">
-            Column Mapping
-            <InfoTooltip text="Map each PO field to the corresponding column letter in your Google Sheet." />
-          </p>
-          <div className="overflow-x-auto">
-            <table className="text-sm">
-              <thead>
-                <tr className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  <th className="pb-2 pr-10 text-left">Field Name</th>
-                  <th className="pb-2 text-left">Column Letter</th>
-                </tr>
-              </thead>
-              <tbody>
-                {COLUMN_MAPPING_FIELDS.map(({ key, label }) => (
-                  <tr key={key}>
-                    <td className="pr-10 py-1 text-gray-600">{label}</td>
-                    <td className="py-1">
-                      <select
-                        value={gs.po_column_mapping?.[key] || 'A'}
-                        onChange={(e) =>
-                          setNested(`google_sheets.po_column_mapping.${key}`, e.target.value)
-                        }
-                        className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
-                      >
-                        {COLUMNS.map((c) => (
-                          <option key={c} value={c}>{c}</option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
 
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-3">
@@ -738,7 +647,134 @@ export default function Settings() {
         </div>
       </SectionCard>
 
-      {/* Section 2: AI Configuration */}
+      {/* Section: QBO Connection */}
+      <SectionCard
+        title="QuickBooks Connection"
+        onSave={() =>
+          saveSection('qbo', {
+            qbo: {
+              environment: qbo.environment,
+              default_income_account: qbo.default_income_account,
+              default_expense_account: qbo.default_expense_account,
+              default_cogs_account: qbo.default_cogs_account,
+              default_asset_account: qbo.default_asset_account,
+              default_memo_template: qbo.default_memo_template,
+              default_po_terms: qbo.default_po_terms,
+            },
+          })
+        }
+        saving={saving.qbo}
+      >
+        <FieldRow
+          label="Environment"
+          tooltip="Sandbox uses test data only. Switch to Production only when ready to create real transactions in QuickBooks."
+        >
+          <div className="flex items-center gap-6">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                value="sandbox"
+                checked={qbo.environment === 'sandbox'}
+                onChange={() => setNested('qbo.environment', 'sandbox')}
+                className="text-atd-blue focus:ring-atd-blue"
+              />
+              <span className="text-sm text-gray-700">Sandbox</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                value="production"
+                checked={qbo.environment === 'production'}
+                onChange={() => setNested('qbo.environment', 'production')}
+                className="text-atd-blue focus:ring-atd-blue"
+              />
+              <span className="text-sm text-gray-700">Production</span>
+              {qbo.environment === 'production' && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700 border border-red-300">
+                  LIVE
+                </span>
+              )}
+            </label>
+          </div>
+        </FieldRow>
+
+        <FieldRow
+          label="Realm ID"
+          tooltip="Your QuickBooks company ID, assigned automatically when you connect via OAuth. Read-only."
+        >
+          <TextInput
+            value={qbo.realmId || '(not connected)'}
+            readOnly
+          />
+        </FieldRow>
+
+        <FieldRow
+          label="Default Memo Template"
+          tooltip="Default memo text applied to new purchase orders. Can be overridden per PO."
+        >
+          <TextInput
+            value={qbo.default_memo_template}
+            onChange={(v) => setNested('qbo.default_memo_template', v)}
+            placeholder="e.g., ATD PO - {{vendor}}"
+          />
+        </FieldRow>
+        <FieldRow
+          label="Default PO Terms"
+          tooltip="Default payment terms applied to new purchase orders (e.g., Net 30, COD)."
+        >
+          <TextInput
+            value={qbo.default_po_terms}
+            onChange={(v) => setNested('qbo.default_po_terms', v)}
+            placeholder="e.g., Net 30"
+          />
+        </FieldRow>
+
+        <FieldRow
+          label="Default Income Account"
+          tooltip="QBO account for recording income from sales. Leave blank to use QBO defaults."
+        >
+          <TextInput
+            value={qbo.default_income_account}
+            onChange={(v) => setNested('qbo.default_income_account', v)}
+            placeholder="e.g., Sales of Product Income"
+          />
+        </FieldRow>
+        <FieldRow
+          label="Default Expense Account"
+          tooltip="QBO account for recording expenses. Leave blank to use QBO defaults."
+        >
+          <TextInput
+            value={qbo.default_expense_account}
+            onChange={(v) => setNested('qbo.default_expense_account', v)}
+            placeholder="e.g., Cost of Goods Sold"
+          />
+        </FieldRow>
+        <FieldRow
+          label="Default COGS Account"
+          tooltip="QBO Cost of Goods Sold account. Leave blank to use QBO defaults."
+        >
+          <TextInput
+            value={qbo.default_cogs_account}
+            onChange={(v) => setNested('qbo.default_cogs_account', v)}
+            placeholder="e.g., Cost of Goods Sold"
+          />
+        </FieldRow>
+        <FieldRow
+          label="Default Asset Account"
+          tooltip="QBO asset account for inventory. Leave blank to use QBO defaults."
+        >
+          <TextInput
+            value={qbo.default_asset_account}
+            onChange={(v) => setNested('qbo.default_asset_account', v)}
+            placeholder="e.g., Inventory Asset"
+          />
+        </FieldRow>
+      </SectionCard>
+      </div>{/* end grid: Sheets + QBO */}
+
+      {/* Row: AI + Modules */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Section: AI Configuration */}
       <SectionCard
         title="AI Configuration"
         onSave={() =>
@@ -887,131 +923,7 @@ export default function Settings() {
         </div>
       </SectionCard>
 
-      {/* Section 3: QBO Connection */}
-      <SectionCard
-        title="QuickBooks Connection"
-        onSave={() =>
-          saveSection('qbo', {
-            qbo: {
-              environment: qbo.environment,
-              default_income_account: qbo.default_income_account,
-              default_expense_account: qbo.default_expense_account,
-              default_cogs_account: qbo.default_cogs_account,
-              default_asset_account: qbo.default_asset_account,
-              default_memo_template: qbo.default_memo_template,
-              default_po_terms: qbo.default_po_terms,
-            },
-          })
-        }
-        saving={saving.qbo}
-      >
-        <FieldRow
-          label="Environment"
-          tooltip="Sandbox uses test data only. Switch to Production only when ready to create real transactions in QuickBooks."
-        >
-          <div className="flex items-center gap-6">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                value="sandbox"
-                checked={qbo.environment === 'sandbox'}
-                onChange={() => setNested('qbo.environment', 'sandbox')}
-                className="text-atd-blue focus:ring-atd-blue"
-              />
-              <span className="text-sm text-gray-700">Sandbox</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                value="production"
-                checked={qbo.environment === 'production'}
-                onChange={() => setNested('qbo.environment', 'production')}
-                className="text-atd-blue focus:ring-atd-blue"
-              />
-              <span className="text-sm text-gray-700">Production</span>
-              {qbo.environment === 'production' && (
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700 border border-red-300">
-                  LIVE
-                </span>
-              )}
-            </label>
-          </div>
-        </FieldRow>
-
-        <FieldRow
-          label="Realm ID"
-          tooltip="Your QuickBooks company ID, assigned automatically when you connect via OAuth. Read-only."
-        >
-          <TextInput
-            value={qbo.realmId || '(not connected)'}
-            readOnly
-          />
-        </FieldRow>
-
-        <FieldRow
-          label="Default Memo Template"
-          tooltip="Default memo text applied to new purchase orders. Can be overridden per PO."
-        >
-          <TextInput
-            value={qbo.default_memo_template}
-            onChange={(v) => setNested('qbo.default_memo_template', v)}
-            placeholder="e.g., ATD PO - {{vendor}}"
-          />
-        </FieldRow>
-        <FieldRow
-          label="Default PO Terms"
-          tooltip="Default payment terms applied to new purchase orders (e.g., Net 30, COD)."
-        >
-          <TextInput
-            value={qbo.default_po_terms}
-            onChange={(v) => setNested('qbo.default_po_terms', v)}
-            placeholder="e.g., Net 30"
-          />
-        </FieldRow>
-
-        <FieldRow
-          label="Default Income Account"
-          tooltip="QBO account for recording income from sales. Leave blank to use QBO defaults."
-        >
-          <TextInput
-            value={qbo.default_income_account}
-            onChange={(v) => setNested('qbo.default_income_account', v)}
-            placeholder="e.g., Sales of Product Income"
-          />
-        </FieldRow>
-        <FieldRow
-          label="Default Expense Account"
-          tooltip="QBO account for recording expenses. Leave blank to use QBO defaults."
-        >
-          <TextInput
-            value={qbo.default_expense_account}
-            onChange={(v) => setNested('qbo.default_expense_account', v)}
-            placeholder="e.g., Cost of Goods Sold"
-          />
-        </FieldRow>
-        <FieldRow
-          label="Default COGS Account"
-          tooltip="QBO Cost of Goods Sold account. Leave blank to use QBO defaults."
-        >
-          <TextInput
-            value={qbo.default_cogs_account}
-            onChange={(v) => setNested('qbo.default_cogs_account', v)}
-            placeholder="e.g., Cost of Goods Sold"
-          />
-        </FieldRow>
-        <FieldRow
-          label="Default Asset Account"
-          tooltip="QBO asset account for inventory. Leave blank to use QBO defaults."
-        >
-          <TextInput
-            value={qbo.default_asset_account}
-            onChange={(v) => setNested('qbo.default_asset_account', v)}
-            placeholder="e.g., Inventory Asset"
-          />
-        </FieldRow>
-      </SectionCard>
-
-      {/* Section 4: Module Toggles */}
+      {/* Section: Module Settings */}
       <SectionCard
         title="Module Settings"
         onSave={() =>
@@ -1107,8 +1019,9 @@ export default function Settings() {
           </table>
         </div>
       </SectionCard>
+      </div>{/* end grid: AI + Modules */}
 
-      {/* Reset to Defaults */}
+      {/* Danger Zone */}
       <div className="bg-white rounded-xl shadow-sm px-6 py-5">
         <h2 className="text-base font-semibold text-atd-dark mb-1">Danger Zone</h2>
         <p className="text-sm text-gray-500 mb-4">

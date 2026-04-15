@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   ShoppingCart,
   FileText,
@@ -14,21 +13,11 @@ import {
   X,
   RefreshCw,
   XCircle,
-  AlertTriangle,
-  Users,
   FileSpreadsheet,
   Brain,
-  Receipt,
-  CreditCard,
-  Wallet,
-  Lock as LockIcon,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
-
-// Load PurchaseOrders for inline sections
 import PurchaseOrders from './PurchaseOrders';
 
 // --------------------------------------------------------------------------
@@ -62,27 +51,14 @@ function isToday(ts) {
 }
 
 // --------------------------------------------------------------------------
-// Dashboard Feature Box Component
+// Dashboard Box Component
 // --------------------------------------------------------------------------
-function DashboardBox({ icon: Icon, title, description, count, onClick, loading, accentColor = 'bg-atd-blue', disabled = false, badge = null }) {
+function DashboardBox({ icon: Icon, title, description, count, onClick, loading, accentColor = 'bg-atd-blue' }) {
   return (
     <button
       onClick={onClick}
-      disabled={disabled}
-      className={`relative bg-white rounded-xl shadow-sm border text-left group transition-all ${
-        disabled
-          ? 'border-gray-200 opacity-80 cursor-not-allowed'
-          : 'border-gray-100 hover:shadow-md hover:border-atd-blue/30'
-      }`}
+      className="bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md hover:border-atd-blue/30 transition-all text-left group"
     >
-      {disabled && (
-        <div className="absolute inset-0 bg-white/55 flex items-center justify-center rounded-xl z-10">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gray-900 text-white text-xs font-semibold shadow-sm">
-            <LockIcon className="h-3.5 w-3.5" />
-            {badge || 'Coming Soon'}
-          </div>
-        </div>
-      )}
       <div className="p-6">
         <div className="flex items-start justify-between mb-4">
           <div className={`p-3 rounded-xl ${accentColor}`}>
@@ -104,39 +80,22 @@ function DashboardBox({ icon: Icon, title, description, count, onClick, loading,
 }
 
 // --------------------------------------------------------------------------
-// Main Dashboard Component
+// Main Dashboard
 // --------------------------------------------------------------------------
 export default function Dashboard() {
-  const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState(null);
   const [loading, setLoading] = useState(true);
   const [systemOk, setSystemOk] = useState(null);
-  const [error, setError] = useState(null);
-  const [healthWarning, setHealthWarning] = useState(null);
-  const [healthDismissed, setHealthDismissed] = useState(false);
-
-  // Data for overview stats
   const [stats, setStats] = useState({ drafts: 0, todayPOs: 0, todayAIReviews: 0 });
-  const [aiStatus, setAiStatus] = useState(null);
 
   const fetchStats = useCallback(async () => {
     setLoading(true);
-    setError(null);
     try {
-      const [draftsRes, historyRes, healthRes, settingsRes] = await Promise.all([
+      const [draftsRes, historyRes, healthRes] = await Promise.all([
         api.getPoDrafts().catch(() => ({ drafts: [] })),
         api.getPoHistory().catch(() => ({ history: [] })),
         api.getHealth().catch(() => null),
-        api.getSettings().catch(() => null),
       ]);
-
-      // AI status from settings
-      if (settingsRes?.settings?.ai) {
-        const ai = settingsRes.settings.ai;
-        setAiStatus({
-          mode: ai.mode || (ai.enabled === false ? 'off' : (ai.ollama_enabled === false ? 'cloud' : 'ollama')),
-        });
-      }
       const drafts = Array.isArray(draftsRes.drafts) ? draftsRes.drafts : [];
       const history = Array.isArray(historyRes.history) ? historyRes.history : [];
       const todayHistory = history.filter((h) => isToday(h.createdAt || h.timestamp));
@@ -148,20 +107,8 @@ export default function Dashboard() {
         todayAIReviews: todayAiReviews.length,
       });
       setSystemOk(healthRes ? (healthRes.status === 'ok' || healthRes.status === 'healthy') : null);
-
-      // Health warning banner for unhealthy/degraded status
-      if (healthRes && (healthRes.status === 'unhealthy' || healthRes.status === 'degraded')) {
-        setHealthWarning({
-          status: healthRes.status,
-          errors: healthRes.errors || [],
-        });
-        setHealthDismissed(false);
-      } else {
-        setHealthWarning(null);
-      }
     } catch (err) {
       setSystemOk(false);
-      setError(err.message || 'Failed to load dashboard data.');
     } finally {
       setLoading(false);
     }
@@ -171,138 +118,39 @@ export default function Dashboard() {
     fetchStats();
   }, [fetchStats]);
 
-  // Feature boxes configuration
+  // Feature boxes
   const featureBoxes = [
-    {
-      id: 'overview',
-      icon: Activity,
-      title: 'Overview',
-      description: 'View platform stats, system health, and recent activity at a glance.',
-      accentColor: 'bg-atd-blue',
-    },
-    {
-      id: 'create-po',
-      icon: Plus,
-      title: 'Create PO',
-      description: 'Create a new purchase order. Select vendor, add line items, and submit for approval or push directly to QuickBooks.',
-      accentColor: 'bg-green-600',
-    },
-    {
-      id: 'drafts',
-      icon: FileText,
-      title: 'Drafts',
-      description: 'Review and approve pending purchase order drafts before they go to QuickBooks.',
-      accentColor: 'bg-yellow-500',
-    },
-    {
-      id: 'history',
-      icon: HistoryIcon,
-      title: 'History',
-      description: 'See all purchase orders that have been pushed to QuickBooks with their status and details.',
-      accentColor: 'bg-purple-500',
-    },
-    {
-      id: 'import',
-      icon: FileSpreadsheet,
-      title: 'Import from Sheets',
-      description: 'Import purchase orders from a Google Sheet. Configure your sheet mapping in settings first.',
-      accentColor: 'bg-blue-500',
-    },
-    {
-      id: 'vendors',
-      icon: Tags,
-      title: 'Vendor Mapping',
-      description: 'Map and sync vendors between ATD and QuickBooks. Keep your vendor list up to date.',
-      accentColor: 'bg-orange-500',
-    },
-    {
-      id: 'qbo',
-      icon: Link2,
-      title: 'QBO Connect',
-      description: 'Connect or disconnect your QuickBooks account. Check connection status and manage authentication.',
-      accentColor: 'bg-indigo-500',
-    },
-    {
-      id: 'ai-review',
-      icon: Brain,
-      title: 'AI Assistant',
-      description: 'Use AI to review and validate your purchase orders before submitting. Get suggestions and flag potential issues.',
-      accentColor: 'bg-pink-500',
-    },
-    {
-      id: 'invoices',
-      icon: FileText,
-      title: 'Invoice Create',
-      description: 'Create invoices with AI review.',
-      accentColor: 'bg-emerald-600',
-      route: '/invoices',
-      comingSoon: true,
-    },
-    {
-      id: 'bills',
-      icon: Receipt,
-      title: 'Bill Create',
-      description: 'Manage vendor bills.',
-      accentColor: 'bg-amber-600',
-      route: '/bills',
-      comingSoon: true,
-    },
-    {
-      id: 'payments',
-      icon: CreditCard,
-      title: 'Payment Apply',
-      description: 'Apply payments to invoices.',
-      accentColor: 'bg-cyan-600',
-      route: '/payments',
-      comingSoon: true,
-    },
-    {
-      id: 'expenses',
-      icon: Wallet,
-      title: 'Expense Categorize',
-      description: 'AI-powered expense categorization.',
-      accentColor: 'bg-rose-600',
-      route: '/expenses',
-      comingSoon: true,
-    },
+    { id: 'overview', icon: Activity, title: 'Overview', description: 'View platform stats, system health, and recent activity at a glance.', accentColor: 'bg-atd-blue' },
+    { id: 'create-po', icon: Plus, title: 'Create PO', description: 'Create a new purchase order. Select vendor, add line items, and submit for approval or push directly to QuickBooks.', accentColor: 'bg-green-600' },
+    { id: 'drafts', icon: FileText, title: 'Drafts', description: 'Review and approve pending purchase order drafts before they go to QuickBooks.', accentColor: 'bg-yellow-500' },
+    { id: 'history', icon: HistoryIcon, title: 'History', description: 'See all purchase orders that have been pushed to QuickBooks with their status and details.', accentColor: 'bg-purple-500' },
+    { id: 'import', icon: FileSpreadsheet, title: 'Import from Sheets', description: 'Import purchase orders from a Google Sheet. Configure your sheet mapping in settings first.', accentColor: 'bg-blue-500' },
+    { id: 'vendors', icon: Tags, title: 'Vendor Mapping', description: 'Map and sync vendors between ATD and QuickBooks. Keep your vendor list up to date.', accentColor: 'bg-orange-500' },
+    { id: 'qbo', icon: Link2, title: 'QBO Connect', description: 'Connect or disconnect your QuickBooks account. Check connection status and manage authentication.', accentColor: 'bg-indigo-500' },
+    { id: 'ai-review', icon: Brain, title: 'AI Assistant', description: 'Use AI to review and validate your purchase orders before submitting. Get suggestions and flag potential issues.', accentColor: 'bg-pink-500' },
   ];
 
-  // Render the selected section
   const renderSection = () => {
-    if (!activeSection) return null;
-    
     switch (activeSection) {
-      case 'overview':
-        return <OverviewSection stats={stats} systemOk={systemOk} aiStatus={aiStatus} loading={loading} onRefresh={fetchStats} onClose={() => setActiveSection(null)} onNavigate={setActiveSection} />;
-      case 'create-po':
-        return <CreatePOSection onClose={() => setActiveSection(null)} />;
-      case 'drafts':
-        return <DraftsSection onClose={() => setActiveSection(null)} />;
-      case 'history':
-        return <HistorySection onClose={() => setActiveSection(null)} />;
-      case 'import':
-        return <ImportSection onClose={() => setActiveSection(null)} />;
-      case 'vendors':
-        return <VendorMappingSection onClose={() => setActiveSection(null)} />;
-      case 'qbo':
-        return <QBOConnectSection onClose={() => setActiveSection(null)} />;
-      case 'ai-review':
-        return <AIChatSection onClose={() => setActiveSection(null)} />;
-      default:
-        return null;
+      case 'overview': return <OverviewSection stats={stats} systemOk={systemOk} loading={loading} onRefresh={fetchStats} onClose={() => setActiveSection(null)} />;
+      case 'create-po': return <CreatePOSection onClose={() => setActiveSection(null)} />;
+      case 'drafts': return <DraftsSection onClose={() => setActiveSection(null)} />;
+      case 'history': return <HistorySection onClose={() => setActiveSection(null)} />;
+      case 'import': return <ImportSection onClose={() => setActiveSection(null)} />;
+      case 'vendors': return <VendorMappingSection onClose={() => setActiveSection(null)} />;
+      case 'qbo': return <QBOConnectSection onClose={() => setActiveSection(null)} />;
+      case 'ai-review': return <AIChatSection onClose={() => setActiveSection(null)} />;
+      default: return null;
     }
   };
 
   return (
     <div className="h-full flex flex-col">
-      {/* Top Header - Title left, Actions right */}
+      {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200 flex-shrink-0">
         <div className="flex items-center gap-4">
           <h1 className="text-2xl font-bold text-atd-dark">Dashboard</h1>
-          <button
-            onClick={fetchStats}
-            className="flex items-center gap-2 text-sm text-gray-500 hover:text-atd-blue transition-colors"
-          >
+          <button onClick={fetchStats} className="flex items-center gap-2 text-sm text-gray-500 hover:text-atd-blue transition-colors">
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
@@ -313,57 +161,12 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Main Content - Either section or grid of boxes */}
+      {/* Main Content */}
       <main className="flex-1 overflow-y-auto p-6">
         {activeSection ? (
           renderSection()
         ) : (
           <div className="max-w-6xl mx-auto">
-            {/* Health warning banner */}
-            {healthWarning && !healthDismissed && (
-              <div className={`mb-6 rounded-lg px-4 py-3 text-sm flex items-start justify-between ${
-                healthWarning.status === 'unhealthy'
-                  ? 'bg-red-50 border border-red-300 text-red-700'
-                  : 'bg-yellow-50 border border-yellow-300 text-yellow-700'
-              }`}>
-                <div className="flex items-start gap-2 flex-1">
-                  <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="font-medium">
-                      System {healthWarning.status === 'unhealthy' ? 'Unhealthy' : 'Degraded'}
-                    </p>
-                    {healthWarning.errors.length > 0 && (
-                      <ul className="mt-1 list-disc list-inside">
-                        {healthWarning.errors.map((e, i) => (
-                          <li key={i}>{e}</li>
-                        ))}
-                      </ul>
-                    )}
-                    <button
-                      onClick={() => navigate('/health')}
-                      className="mt-1 underline text-sm font-medium hover:opacity-80"
-                    >
-                      View Details
-                    </button>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setHealthDismissed(true)}
-                  className="ml-3 flex-shrink-0 hover:opacity-70"
-                  aria-label="Dismiss"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            )}
-
-            {/* Error banner */}
-            {error && (
-              <div className="mb-6 bg-red-50 border border-red-300 text-red-700 rounded-lg px-4 py-3 text-sm">
-                {error}
-              </div>
-            )}
-
             <p className="text-gray-500 text-sm mb-6">Select a feature below to get started.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {featureBoxes.map((box) => (
@@ -374,16 +177,7 @@ export default function Dashboard() {
                   description={box.description}
                   loading={loading}
                   accentColor={box.accentColor}
-                  disabled={Boolean(box.comingSoon)}
-                  badge={box.comingSoon ? 'Coming Soon' : null}
-                  onClick={() => {
-                    if (box.comingSoon) return;
-                    if (box.route) {
-                      navigate(box.route);
-                      return;
-                    }
-                    setActiveSection(box.id);
-                  }}
+                  onClick={() => setActiveSection(box.id)}
                 />
               ))}
             </div>
@@ -395,92 +189,42 @@ export default function Dashboard() {
 }
 
 // --------------------------------------------------------------------------
-// Settings Button (top right)
+// Settings Modal (Top Right)
 // --------------------------------------------------------------------------
 function SettingsButton() {
   const [isOpen, setIsOpen] = useState(false);
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  function normalizeAi(ai = {}) {
-    const mode = ai.mode || (ai.enabled === false ? 'off' : (ai.ollama_enabled === false ? 'cloud' : 'ollama'));
-    return { ...ai, mode };
-  }
-
-  function buildNestedUpdate(path, value) {
-    const keys = path.split('.');
-    const root = {};
-    let cursor = root;
-    for (let i = 0; i < keys.length - 1; i++) {
-      cursor[keys[i]] = {};
-      cursor = cursor[keys[i]];
-    }
-    cursor[keys[keys.length - 1]] = value;
-    return root;
-  }
-
-  function mergeNestedState(prev, path, value) {
-    const keys = path.split('.');
-    const next = { ...(prev || {}) };
-    let cursor = next;
-    for (let i = 0; i < keys.length - 1; i++) {
-      cursor[keys[i]] = { ...(cursor[keys[i]] || {}) };
-      cursor = cursor[keys[i]];
-    }
-    cursor[keys[keys.length - 1]] = value;
-    return next;
-  }
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       api.getSettings()
-        .then((r) => {
-          const nextSettings = r.settings || {};
-          nextSettings.ai = normalizeAi(nextSettings.ai || {});
-          setSettings(nextSettings);
-        })
+        .then((r) => setSettings(r.settings))
         .catch(() => {})
         .finally(() => setLoading(false));
     }
   }, [isOpen]);
 
   async function handleSave(key, value) {
+    setSaving(true);
+    setSaved(false);
     try {
-      await api.updateSettings(buildNestedUpdate(key, value));
-      setSettings((s) => {
-        const merged = mergeNestedState(s, key, value);
-        if (merged.ai) {
-          merged.ai = normalizeAi(merged.ai);
-        }
-        return merged;
-      });
+      await api.updateSettings({ [key]: value });
+      setSettings((s) => ({ ...s, [key]: value }));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
     } catch (err) {
       console.error(err);
-    }
-  }
-
-  async function handleAiModeChange(mode) {
-    try {
-      await api.updateSettings({ ai: { mode } });
-      setSettings((s) => {
-        const nextAi = normalizeAi({ ...(s?.ai || {}), mode });
-        return {
-          ...(s || {}),
-          ai: nextAi,
-        };
-      });
-    } catch (err) {
-      console.error(err);
+    } finally {
+      setSaving(false);
     }
   }
 
   if (!isOpen) {
     return (
-      <button
-        onClick={() => setIsOpen(true)}
-        className="p-2 text-gray-500 hover:text-atd-blue hover:bg-gray-100 rounded-lg transition-colors"
-        title="Settings"
-      >
+      <button onClick={() => setIsOpen(true)} className="p-2 text-gray-500 hover:text-atd-blue hover:bg-gray-100 rounded-lg" title="Settings">
         <Settings className="h-5 w-5" />
       </button>
     );
@@ -500,6 +244,78 @@ function SettingsButton() {
             <LoadingSpinner size="lg" color="atd-blue" />
           ) : (
             <>
+              {/* AI Settings */}
+              <div>
+                <h3 className="font-medium text-atd-dark mb-3">AI Configuration</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">AI Mode</label>
+                    <select
+                      value={settings?.ai?.mode || 'cloud'}
+                      onChange={(e) => handleSave('ai.mode', e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    >
+                      <option value="off">Off</option>
+                      <option value="ollama">Ollama (Local)</option>
+                      <option value="cloud">Cloud (Claude)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">Ollama Model</label>
+                    <select
+                      value={settings?.ai?.ollama_model || 'llama3.2:latest'}
+                      onChange={(e) => handleSave('ai.ollama_model', e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    >
+                      <option value="llama3.2:latest">Llama 3.2</option>
+                      <option value="llama3.1:latest">Llama 3.1</option>
+                      <option value="mistral:latest">Mistral</option>
+                      <option value="qwen2.5-coder:14b">Qwen 2.5 Coder 14B</option>
+                      <option value="qwen3.5-coder-35b:latest">Qwen 3.5 Coder 35B</option>
+                      <option value="codellama:14b">Code Llama 14B</option>
+                      <option value="phi4:latest">Phi 4</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Must have Ollama running locally</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">Claude Model</label>
+                    <select
+                      value={settings?.ai?.claude_model || 'claude-sonnet-4-20250514'}
+                      onChange={(e) => handleSave('ai.claude_model', e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    >
+                      <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+                      <option value="claude-opus-4-20250514">Claude Opus 4</option>
+                      <option value="claude-haiku-3-20240307">Claude Haiku 3</option>
+                      <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Requires CLAUDE_API_KEY in .env</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">Preferred Provider</label>
+                    <select
+                      value={settings?.ai?.preferred_provider || 'auto'}
+                      onChange={(e) => handleSave('ai.preferred_provider', e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    >
+                      <option value="auto">Auto (try both)</option>
+                      <option value="ollama-only">Ollama Only</option>
+                      <option value="claude-only">Claude Only</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center justify-between pt-2">
+                    <span className="text-sm text-gray-600">AI Review Enabled</span>
+                    <button
+                      onClick={() => handleSave('ai.enabled', !settings?.ai?.enabled)}
+                      className={`w-12 h-6 rounded-full transition-colors ${settings?.ai?.enabled ? 'bg-atd-blue' : 'bg-gray-300'}`}
+                    >
+                      <div className={`w-5 h-5 bg-white rounded-full transition-transform ${settings?.ai?.enabled ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Google Sheets */}
               <div>
                 <h3 className="font-medium text-atd-dark mb-3">Google Sheets</h3>
                 <div className="space-y-3">
@@ -509,8 +325,7 @@ function SettingsButton() {
                       type="text"
                       defaultValue={settings?.google_sheets?.po_sheet_id || ''}
                       onBlur={(e) => handleSave('google_sheets.po_sheet_id', e.target.value)}
-                      placeholder="Enter Google Sheet ID"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                     />
                   </div>
                   <div>
@@ -519,40 +334,14 @@ function SettingsButton() {
                       type="text"
                       defaultValue={settings?.google_sheets?.po_sheet_tab || ''}
                       onBlur={(e) => handleSave('google_sheets.po_sheet_tab', e.target.value)}
-                      placeholder="e.g., Sheet1"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                     />
                   </div>
                 </div>
               </div>
-              <div>
-                <h3 className="font-medium text-atd-dark mb-3">AI Review</h3>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-1">AI Mode</label>
-                    <select
-                      value={settings?.ai?.mode || 'cloud'}
-                      onChange={(e) => handleAiModeChange(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
-                    >
-                      <option value="off">AI Off</option>
-                      <option value="ollama">Local Ollama AI</option>
-                      <option value="cloud">Cloud/API AI</option>
-                    </select>
-                  </div>
-                  {settings?.ai?.mode === 'ollama' && (
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-1">Ollama URL</label>
-                      <input
-                        type="text"
-                        defaultValue={settings?.ai?.ollama_url || 'http://localhost:11434'}
-                        onBlur={(e) => handleSave('ai.ollama_url', e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
+
+              {saving && <LoadingSpinner size="sm" color="atd-blue" />}
+              {saved && <div className="text-green-600 text-sm">Settings saved!</div>}
             </>
           )}
         </div>
@@ -562,18 +351,14 @@ function SettingsButton() {
 }
 
 // --------------------------------------------------------------------------
-// Help Button (top right)
+// Help Modal (Top Right)
 // --------------------------------------------------------------------------
 function HelpButton() {
   const [isOpen, setIsOpen] = useState(false);
 
   if (!isOpen) {
     return (
-      <button
-        onClick={() => setIsOpen(true)}
-        className="p-2 text-gray-500 hover:text-atd-blue hover:bg-gray-100 rounded-lg transition-colors"
-        title="User Guide"
-      >
+      <button onClick={() => setIsOpen(true)} className="p-2 text-gray-500 hover:text-atd-blue hover:bg-gray-100 rounded-lg" title="User Guide">
         <HelpCircle className="h-5 w-5" />
       </button>
     );
@@ -581,24 +366,21 @@ function HelpButton() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 max-h-[80vh] overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="text-lg font-semibold text-atd-dark">User Guide</h2>
           <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-gray-600">
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="p-6 overflow-y-auto space-y-6">
+        <div className="p-6 space-y-6 text-sm text-gray-600">
           <div>
             <h3 className="font-medium text-atd-dark mb-2">Getting Started</h3>
-            <p className="text-sm text-gray-600">
-              This platform connects ATD with QuickBooks for managing purchase orders. 
-              Start by connecting your QuickBooks account, then create POs or import from Google Sheets.
-            </p>
+            <p>This platform connects ATD with QuickBooks. Start by connecting your QuickBooks account, then create POs or import from Google Sheets.</p>
           </div>
           <div>
             <h3 className="font-medium text-atd-dark mb-2">Workflow</h3>
-            <ol className="text-sm text-gray-600 space-y-2 list-decimal list-inside">
+            <ol className="list-decimal list-inside space-y-1">
               <li>Connect QuickBooks in QBO Connect</li>
               <li>Create a PO or import from Sheets</li>
               <li>AI reviews and validates the PO</li>
@@ -607,12 +389,8 @@ function HelpButton() {
             </ol>
           </div>
           <div>
-            <h3 className="font-medium text-atd-dark mb-2">Tips</h3>
-            <ul className="text-sm text-gray-600 space-y-2 list-disc list-inside">
-              <li>Enable AI Review in Settings for automatic validation</li>
-              <li>Use Vendor Mapping to sync vendors from QBO</li>
-              <li>Import from Sheets to bulk-create POs</li>
-            </ul>
+            <h3 className="font-medium text-atd-dark mb-2">AI Settings</h3>
+            <p>Choose between Ollama (local, free) or Claude (cloud). Select models in Settings. Ollama requires running locally, Claude needs an API key.</p>
           </div>
         </div>
       </div>
@@ -623,7 +401,7 @@ function HelpButton() {
 // --------------------------------------------------------------------------
 // Overview Section
 // --------------------------------------------------------------------------
-function OverviewSection({ stats, systemOk, aiStatus, loading, onRefresh, onClose, onNavigate }) {
+function OverviewSection({ stats, systemOk, loading, onRefresh, onClose }) {
   const [recentActivity, setRecentActivity] = useState([]);
 
   useEffect(() => {
@@ -632,14 +410,6 @@ function OverviewSection({ stats, systemOk, aiStatus, loading, onRefresh, onClos
       .catch(() => {});
   }, []);
 
-  // Build AI status label
-  const aiLabel = (() => {
-    if (!aiStatus) return null;
-    if (aiStatus.mode === 'off') return 'AI Off';
-    if (aiStatus.mode === 'ollama') return 'Local Ollama AI';
-    return 'Cloud/API AI';
-  })();
-
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <button onClick={onClose} className="flex items-center gap-2 text-sm text-gray-500 hover:text-atd-blue mb-4">
@@ -647,9 +417,9 @@ function OverviewSection({ stats, systemOk, aiStatus, loading, onRefresh, onClos
       </button>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <DashboardBox icon={FileText} title="Pending Drafts" description="" count={stats.drafts} accentColor="bg-atd-blue" onClick={() => onNavigate('drafts')} />
-        <DashboardBox icon={ShoppingCart} title="POs Today" description="" count={stats.todayPOs} accentColor="bg-green-600" onClick={() => onNavigate('history')} />
-        <DashboardBox icon={Brain} title="AI Reviews" description="" count={stats.todayAIReviews} accentColor="bg-purple-500" onClick={() => onNavigate('ai-review')} />
+        <DashboardBox icon={FileText} title="Pending Drafts" description="" count={stats.drafts} accentColor="bg-atd-blue" onClick={() => {}} />
+        <DashboardBox icon={ShoppingCart} title="POs Today" description="" count={stats.todayPOs} accentColor="bg-green-600" onClick={() => {}} />
+        <DashboardBox icon={Brain} title="AI Reviews" description="" count={stats.todayAIReviews} accentColor="bg-purple-500" onClick={() => {}} />
         <div className="bg-white rounded-xl shadow-sm p-6 flex items-start justify-between">
           <div>
             <p className="text-sm text-gray-500 font-medium">System Status</p>
@@ -671,33 +441,11 @@ function OverviewSection({ stats, systemOk, aiStatus, loading, onRefresh, onClos
               )}
             </div>
           </div>
-          <div className={`p-2 rounded-lg ${systemOk === null ? 'bg-gray-400' : systemOk ? 'bg-green-500' : 'bg-red-500'}`}>
+          <div className={`p-2 rounded-lg ${systemOk ? 'bg-green-500' : 'bg-red-500'}`}>
             {systemOk ? <CheckCircle className="h-6 w-6 text-white" /> : <XCircle className="h-6 w-6 text-white" />}
           </div>
         </div>
       </div>
-
-      {/* AI Provider Status */}
-      {aiLabel && (
-        <div className="bg-white rounded-xl shadow-sm px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Brain className="h-5 w-5 text-purple-500" />
-            <span className="text-sm font-medium text-atd-dark">AI Provider</span>
-          </div>
-            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${
-              aiStatus.mode === 'off'
-                ? 'bg-gray-100 text-gray-500'
-                : aiStatus.mode === 'ollama'
-                  ? 'bg-purple-100 text-purple-700'
-                  : 'bg-blue-100 text-blue-700'
-            }`}>
-            <span className={`inline-block h-2 w-2 rounded-full ${
-              aiStatus.mode === 'off' ? 'bg-gray-400' : 'bg-green-500'
-            }`} />
-            {aiLabel}
-          </span>
-        </div>
-      )}
 
       <div className="bg-white rounded-xl shadow-sm">
         <div className="px-6 py-4 border-b border-gray-100">
@@ -712,9 +460,8 @@ function OverviewSection({ stats, systemOk, aiStatus, loading, onRefresh, onClos
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  <th className="px-6 py-3">Date / Time</th>
-                  <th className="px-6 py-3">Module</th>
+                <tr className="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase">
+                  <th className="px-6 py-3">Date/Time</th>
                   <th className="px-6 py-3">Action</th>
                   <th className="px-6 py-3">Status</th>
                   <th className="px-6 py-3">Details</th>
@@ -722,23 +469,16 @@ function OverviewSection({ stats, systemOk, aiStatus, loading, onRefresh, onClos
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {recentActivity.map((item, idx) => (
-                  <tr key={item.id || idx} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-3 text-gray-500 whitespace-nowrap">{formatDateTime(item.createdAt || item.timestamp)}</td>
-                    <td className="px-6 py-3 font-medium text-atd-dark">{item.module || 'Purchase Order'}</td>
-                    <td className="px-6 py-3 text-gray-600">{item.action || item.type || 'Create'}</td>
+                  <tr key={item.id || idx}>
+                    <td className="px-6 py-3 text-gray-500">{formatDateTime(item.timestamp)}</td>
+                    <td className="px-6 py-3 font-medium text-atd-dark">{item.action || 'Create'}</td>
                     <td className="px-6 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                         item.status === 'success' ? 'bg-green-100 text-green-700' :
-                        item.status === 'error' ? 'bg-red-100 text-red-700' :
-                        item.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                        item.status === 'draft' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
-                      }`}>{item.status ? item.status.charAt(0).toUpperCase() + item.status.slice(1) : 'Unknown'}</span>
+                        item.status === 'error' ? 'bg-red-100 text-red-700' : 'bg-gray-100'
+                      }`}>{item.status}</span>
                     </td>
-                    <td className="px-6 py-3 text-gray-500 max-w-xs truncate">
-                      {item.qboEntityId
-                        ? `QBO ID: ${item.qboEntityId}`
-                        : item.vendorName || item.details || item.error || '-'}
-                    </td>
+                    <td className="px-6 py-3 text-gray-500">{item.vendorName || item.error || '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -921,7 +661,7 @@ function HistorySection({ onClose }) {
 }
 
 // --------------------------------------------------------------------------
-// Import from Sheets Section
+// Import Section
 // --------------------------------------------------------------------------
 function ImportSection({ onClose }) {
   const [loading, setLoading] = useState(false);
@@ -969,18 +709,10 @@ function ImportSection({ onClose }) {
       )}
       
       <div className="flex gap-4">
-        <button
-          onClick={handleTest}
-          disabled={loading}
-          className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-60"
-        >
+        <button onClick={handleTest} disabled={loading} className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-60">
           Test Connection
         </button>
-        <button
-          onClick={handleImport}
-          disabled={loading}
-          className="px-4 py-2 bg-atd-blue text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-60"
-        >
+        <button onClick={handleImport} disabled={loading} className="px-4 py-2 bg-atd-blue text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-60">
           {loading ? <LoadingSpinner size="sm" color="white" /> : 'Import POs'}
         </button>
       </div>
@@ -1087,10 +819,6 @@ function QBOConnectSection({ onClose }) {
       .finally(() => setLoading(false));
   }, []);
 
-  async function handleConnect() {
-    window.location.href = `${API_BASE_URL}/auth/connect`;
-  }
-
   return (
     <div className="max-w-md mx-auto">
       <button onClick={onClose} className="flex items-center gap-2 text-sm text-gray-500 hover:text-atd-blue mb-4">
@@ -1122,7 +850,7 @@ function QBOConnectSection({ onClose }) {
           </div>
         ) : (
           <button
-            onClick={handleConnect}
+            onClick={() => window.location.href = '/api/auth/connect'}
             className="bg-atd-blue hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium"
           >
             Connect to QuickBooks
