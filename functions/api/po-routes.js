@@ -127,6 +127,90 @@ router.post('/drafts/:draftId/reject', async (req, res, next) => {
   }
 });
 
+// POST /purchase-orders/auto-create
+// Accepts selected order rows from the Orders page, groups by order number + vendor,
+// and creates PO drafts in Firestore for each group.
+router.post('/auto-create', async (req, res, next) => {
+  try {
+    const { rows, headers: reqHeaders } = req.body || {};
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ success: false, error: 'No rows provided.' });
+    }
+
+    // Helper: find a header key by candidate names (case-insensitive)
+    const hdrs = Array.isArray(reqHeaders) ? reqHeaders : [];
+    const rowKeys = rows.length > 0 ? Object.keys(rows[0]) : [];
+    const allKeys = [...new Set([...hdrs, ...rowKeys])];
+
+    function findKey(candidates) {
+      const lower = allKeys.map((k) => ({ o: k, l: k.toLowerCase().trim() }));
+      for (const c of candidates) {
+        const m = lower.find((h) => h.l === c.toLowerCase().trim());
+        if (m) return m.o;
+      }
+      return null;
+    }
+
+    const orderKey = findKey(['Order #', 'Order Number']);
+    const vendorKey = findKey(['Vendor', 'Vendor Name', 'Supplier']);
+    const nameKey = findKey(['Item Name', 'Item Description', 'Description']);
+    const qtyKey = findKey(['Qty', 'Quantity']);
+    const priceKey = findKey(['Unit Price', 'Price', 'Cost']);
+    const skuKey = findKey(['SKU', 'Sku']);
+
+    // Group rows by (orderNumber, vendorName)
+    const groups = new Map();
+    for (const row of rows) {
+      const orderNum = orderKey ? String(row[orderKey] || '').trim() : '';
+      const vendorName = vendorKey ? String(row[vendorKey] || '').trim() : 'Unknown';
+      const groupKey = `${orderNum}__${vendorName}`;
+
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, { orderNumber: orderNum, vendorName, lines: [] });
+      }
+
+      const group = groups.get(groupKey);
+      group.lines.push({
+        description: nameKey ? String(row[nameKey] || '') : '',
+        sku: skuKey ? String(row[skuKey] || '') : '',
+        quantity: qtyKey ? (parseFloat(row[qtyKey]) || 1) : 1,
+        unitPrice: priceKey ? (parseFloat(row[priceKey]) || 0) : 0,
+        unit: 'Sq Ft',
+      });
+    }
+
+    const db = getFirestore();
+    const batch = db.batch();
+    const draftIds = [];
+
+    for (const [, group] of groups) {
+      const ref = db.collection('po_drafts').doc();
+      draftIds.push(ref.id);
+      batch.set(ref, {
+        orderNumber: group.orderNumber,
+        vendorName: group.vendorName,
+        lines: group.lines,
+        status: 'pending',
+        source: 'auto_create',
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
+
+    await batch.commit();
+
+    await logAction('purchase-order', 'auto-create', 'success', {
+      groupCount: groups.size,
+      rowCount: rows.length,
+      draftIds,
+    });
+
+    sendSuccess(res, { created: groups.size, draftIds, rowCount: rows.length });
+  } catch (err) {
+    await logAction('purchase-order', 'auto-create', 'error', { errorMessage: err.message });
+    next(err);
+  }
+});
+
 // POST /po/bulk-create (new bulk endpoint)
 router.post('/bulk-create', validateRequest(Joi.object({
   pos: Joi.array().items(schemas.poCreate).min(1).max(50).required(),

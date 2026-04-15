@@ -489,6 +489,14 @@ export default function Orders() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Auto-sync every 5 minutes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadData();
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [loadData]);
+
   // Filtered + sorted rows
   const baseRows = useMemo(() => {
     let result = rows;
@@ -596,8 +604,9 @@ export default function Orders() {
   async function handleCreatePOAuto() {
     const selectedRows = [...selected].map((idx) => displayRows[idx]);
     try {
-      await api.post('/purchase-orders/auto-create', { rows: selectedRows });
-      setToast({ message: 'Auto-create PO submitted', type: 'success' });
+      const result = await api.autoCreatePo(selectedRows, headers);
+      const created = result.created || 0;
+      setToast({ message: `${created} PO draft${created !== 1 ? 's' : ''} created from ${selectedRows.length} row${selectedRows.length !== 1 ? 's' : ''}`, type: 'success' });
       setSelected(new Set());
     } catch (err) {
       setToast({ message: err.message || 'Auto-create failed', type: 'error' });
@@ -880,6 +889,19 @@ export default function Orders() {
                       {isExpanded && (
                         <tr key={`expanded-${orderNumHeader ? row[orderNumHeader] || idx : idx}-${lineItemHeader ? row[lineItemHeader] || idx : idx}`}>
                           <td colSpan={colsToShow.length + 3} className="p-0">
+                            <div className="bg-gray-50 border-t border-gray-200 px-6 py-3 flex items-center gap-3">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate('/purchase-orders', { state: { prefillRows: [row], headers } });
+                                }}
+                                className="flex items-center gap-2 bg-atd-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                              >
+                                <Package className="h-4 w-4" />
+                                Create PO
+                              </button>
+                              <span className="text-xs text-gray-400">Create a purchase order from this order line</span>
+                            </div>
                             <FulfillmentPanel
                               orderNumber={orderNum}
                               lineItem={lineItem}

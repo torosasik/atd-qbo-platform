@@ -56,9 +56,9 @@ const COLUMN_MAPPING_FIELDS = [
 
 const MODULE_ROWS = [
   { key: 'purchase_order', label: 'Purchase Orders', available: true },
-  { key: 'invoice', label: 'Invoices', available: false },
-  { key: 'bill', label: 'Bills', available: false },
-  { key: 'payment', label: 'Payments', available: false },
+  { key: 'invoice', label: 'Invoices', available: true },
+  { key: 'bill', label: 'Bills', available: true },
+  { key: 'payment', label: 'Payments', available: true },
 ];
 
 // Feature toggles with labels and descriptions
@@ -97,12 +97,6 @@ const BACKEND_DEFAULTS = {
       inventoryQty: 'AE', measuringUnit: 'AF', tilesPerBox: 'AG',
       tileSizeCoverage: 'AH', boxAreaCoverage: 'AI',
     },
-    invoice_sheet_id: '',
-    invoice_sheet_tab: 'Sheet1',
-    invoice_column_mapping: {
-      customerName: 'A', itemDescription: 'B', quantity: 'C',
-      unitPrice: 'D', date: 'E', memo: 'F', invoiceGroupKey: 'G',
-    },
   },
   ai: {
     mode: 'cloud',
@@ -122,7 +116,10 @@ const BACKEND_DEFAULTS = {
     base_url: 'https://quickbooks.api.intuit.com',
     sandbox_base_url: 'https://sandbox-quickbooks.api.intuit.com',
     production_base_url: 'https://quickbooks.api.intuit.com',
+    default_income_account: '',
     default_expense_account: '',
+    default_cogs_account: '',
+    default_asset_account: '',
     default_memo_template: 'PO from ATD Platform - Order #{order_number}',
     default_po_terms: 'Net 30',
   },
@@ -147,7 +144,7 @@ const BACKEND_DEFAULTS = {
     notifications: false,
   },
   oauth: {
-    redirect_uri: 'https://atd-qbo-platform.web.app/api/auth/callback',
+    redirect_uri: 'https://us-central1-atd-qbo-platform.cloudfunctions.net/api/auth/callback',
   },
 };
 
@@ -268,6 +265,7 @@ export default function Settings() {
   const [cacheStatus, setCacheStatus] = useState({ vendors: null, items: null });
   const [sheetTest, setSheetTest] = useState({ status: null, loading: false, message: '' });
   const [sheetPreview, setSheetPreview] = useState({ data: null, open: false, loading: false, error: null });
+  const [sheetSync, setSheetSync] = useState({ loading: false, result: null });
   const [resetConfirm, setResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [aiTest, setAiTest] = useState({ status: null, loading: false, message: '' });
@@ -381,8 +379,12 @@ export default function Settings() {
   async function handleTestSheetConnection() {
     setSheetTest({ status: null, loading: true, message: '' });
     try {
-      await api.testSheetConnection();
-      setSheetTest({ status: 'ok', loading: false, message: 'Connection successful.' });
+      const result = await api.testSheetConnection();
+      if (result.success === false) {
+        setSheetTest({ status: 'error', loading: false, message: result.error || 'Connection failed.' });
+      } else {
+        setSheetTest({ status: 'ok', loading: false, message: 'Connection successful.' });
+      }
     } catch (err) {
       setSheetTest({ status: 'error', loading: false, message: err.message || 'Connection failed.' });
     }
@@ -406,6 +408,17 @@ export default function Settings() {
       setSheetPreview({ data: rows, open: true, loading: false, error: null });
     } catch (err) {
       setSheetPreview({ data: null, open: false, loading: false, error: err.message || 'Preview failed.' });
+    }
+  }
+
+  async function handleSyncNow() {
+    setSheetSync({ loading: true, result: null });
+    try {
+      const result = await api.importFromSheets();
+      const imported = result.imported || 0;
+      setSheetSync({ loading: false, result: { success: true, message: `Imported ${imported} PO group${imported !== 1 ? 's' : ''} from sheet.` } });
+    } catch (err) {
+      setSheetSync({ loading: false, result: { success: false, message: err.message || 'Sync failed.' } });
     }
   }
 
@@ -560,12 +573,6 @@ export default function Settings() {
             placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
           />
         </FieldRow>
-        {qbo.environment === 'production' && (
-          <div className="flex items-center gap-3 bg-red-50 border border-red-300 text-red-800 rounded-lg px-4 py-3 text-sm">
-            <AlertCircle className="h-5 w-5 flex-shrink-0" />
-            WARNING: Production mode affects real QuickBooks data. Switch to Sandbox for testing.
-          </div>
-        )}
         <FieldRow
           label="Tab Name"
           tooltip="The name of the tab within the spreadsheet that contains PO data. Defaults to Sheet1."
@@ -666,7 +673,21 @@ export default function Settings() {
               {sheetPreview.loading ? <LoadingSpinner size="sm" color="gray" /> : null}
               Preview Data
             </button>
+            <button
+              onClick={handleSyncNow}
+              disabled={sheetSync.loading}
+              className="flex items-center gap-2 bg-atd-blue hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+            >
+              {sheetSync.loading ? <LoadingSpinner size="sm" color="white" /> : <RefreshCw className="h-4 w-4" />}
+              Sync Now
+            </button>
           </div>
+          {sheetSync.result && (
+            <div className={`flex items-center gap-1.5 text-sm ${sheetSync.result.success ? 'text-green-600' : 'text-red-600'}`}>
+              {sheetSync.result.success ? <CheckCircle className="h-4 w-4" /> : <X className="h-4 w-4" />}
+              {sheetSync.result.message}
+            </div>
+          )}
           {sheetPreview.error && (
             <p className="text-sm text-red-600">{sheetPreview.error}</p>
           )}
@@ -873,6 +894,10 @@ export default function Settings() {
           saveSection('qbo', {
             qbo: {
               environment: qbo.environment,
+              default_income_account: qbo.default_income_account,
+              default_expense_account: qbo.default_expense_account,
+              default_cogs_account: qbo.default_cogs_account,
+              default_asset_account: qbo.default_asset_account,
               default_memo_template: qbo.default_memo_template,
               default_po_terms: qbo.default_po_terms,
             },
@@ -944,45 +969,46 @@ export default function Settings() {
           />
         </FieldRow>
 
-        <FieldRow label="Last Refreshed">
-          <TextInput value={settings?.qbo?.lastRefreshed || 'Connect to QBO to see token info'} readOnly />
+        <FieldRow
+          label="Default Income Account"
+          tooltip="QBO account for recording income from sales. Leave blank to use QBO defaults."
+        >
+          <TextInput
+            value={qbo.default_income_account}
+            onChange={(v) => setNested('qbo.default_income_account', v)}
+            placeholder="e.g., Sales of Product Income"
+          />
         </FieldRow>
-        <FieldRow label="Token Expires At">
-          <TextInput value={settings?.qbo?.tokenExpiresAt || 'Connect to QBO to see token info'} readOnly />
+        <FieldRow
+          label="Default Expense Account"
+          tooltip="QBO account for recording expenses. Leave blank to use QBO defaults."
+        >
+          <TextInput
+            value={qbo.default_expense_account}
+            onChange={(v) => setNested('qbo.default_expense_account', v)}
+            placeholder="e.g., Cost of Goods Sold"
+          />
         </FieldRow>
-        <p className="text-xs text-gray-400">
-          Token status will display here after OAuth setup is complete.
-        </p>
-
-        <div className="flex flex-wrap gap-3 pt-1">
-          <div className="flex flex-col gap-1">
-            <button
-              onClick={handleRefreshVendors}
-              disabled={cacheStatus.vendors === 'loading'}
-              className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-            >
-              <RefreshCw className={`h-4 w-4 ${cacheStatus.vendors === 'loading' ? 'animate-spin' : ''}`} />
-              Refresh Vendor Cache
-            </button>
-            {cacheStatus.vendors && cacheStatus.vendors !== 'loading' && (
-              <span className="text-xs text-gray-500 pl-1">{cacheStatus.vendors}</span>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <button
-              onClick={handleRefreshItems}
-              disabled={cacheStatus.items === 'loading'}
-              className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-            >
-              <RefreshCw className={`h-4 w-4 ${cacheStatus.items === 'loading' ? 'animate-spin' : ''}`} />
-              Refresh Item Cache
-            </button>
-            {cacheStatus.items && cacheStatus.items !== 'loading' && (
-              <span className="text-xs text-gray-500 pl-1">{cacheStatus.items}</span>
-            )}
-          </div>
-        </div>
+        <FieldRow
+          label="Default COGS Account"
+          tooltip="QBO Cost of Goods Sold account. Leave blank to use QBO defaults."
+        >
+          <TextInput
+            value={qbo.default_cogs_account}
+            onChange={(v) => setNested('qbo.default_cogs_account', v)}
+            placeholder="e.g., Cost of Goods Sold"
+          />
+        </FieldRow>
+        <FieldRow
+          label="Default Asset Account"
+          tooltip="QBO asset account for inventory. Leave blank to use QBO defaults."
+        >
+          <TextInput
+            value={qbo.default_asset_account}
+            onChange={(v) => setNested('qbo.default_asset_account', v)}
+            placeholder="e.g., Inventory Asset"
+          />
+        </FieldRow>
       </SectionCard>
 
       {/* Section 4: Module Toggles */}

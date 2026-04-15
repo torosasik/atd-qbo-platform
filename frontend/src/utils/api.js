@@ -133,6 +133,7 @@ export const api = {
   testSheetConnection: () => api.get('/sheets/test-connection'),
   previewSheetData: () => api.get('/sheets/preview'),
   importFromSheets: () => api.post('/sheets/import', {}),
+  autoCreatePo: (rows, headers) => api.post('/po/auto-create', { rows, headers }),
 
   // QBO Auth
   getAuthStatus: () => api.get('/auth/status'),

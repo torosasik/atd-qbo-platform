@@ -44,6 +44,13 @@ function normalizeComparable(value) {
 }
 
 function findColumnKey(row = {}, candidates = []) {
+  // First check if any key matches (row-oriented data after transpose)
+  for (const candidate of candidates) {
+    const target = normalizeComparable(candidate);
+    const keyMatch = Object.keys(row).find((key) => normalizeComparable(key) === target);
+    if (keyMatch) return keyMatch;
+  }
+  // Then check if any value matches (column-oriented data before transpose)
   const entries = Object.keys(row).map((key) => ({ key, comparable: normalizeComparable(row[key]) }));
   for (const candidate of candidates) {
     const target = normalizeComparable(candidate);
@@ -245,7 +252,8 @@ router.get('/preview', async (req, res, next) => {
     }
 
     try {
-      const { headers, rows } = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
+      const raw = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
+      const { headers, rows } = transposeSheetData(raw.headers, raw.rows);
       const mappedRows = mapRowsForPoGrouping(rows);
       const pos = groupByPO(mappedRows, 'orderNumber');
       const validRows = mappedRows.filter((row) => String(row.orderNumber || '').trim()).length;
@@ -378,7 +386,8 @@ router.post('/import', async (req, res, next) => {
     }
 
     try {
-      const { rows } = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
+      const raw = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
+      const { rows } = transposeSheetData(raw.headers, raw.rows);
       const mappedRows = mapRowsForPoGrouping(rows);
       const pos = groupByPO(mappedRows, 'orderNumber');
 
