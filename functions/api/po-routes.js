@@ -240,4 +240,30 @@ router.post('/bulk-create', validateRequest(Joi.object({
   }
 });
 
+// GET /po/stats
+router.get('/stats', async (req, res, next) => {
+  try {
+    const db = getFirestore();
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    // Get all drafts (without status filter to count different statuses)
+    const allDraftsSnap = await db.collection('po_drafts').get();
+    const allDrafts = allDraftsSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+    const drafts = allDrafts.filter((d) => d.status === 'pending').length;
+    const pendingSync = allDrafts.filter((d) => d.status === 'queued' || d.status === 'pending').length;
+    const failed = allDrafts.filter((d) => d.status === 'error' || d.status === 'failed').length;
+    const todayCreated = allDrafts.filter((d) => {
+      if (!d.createdAt) return false;
+      const created = d.createdAt.toDate ? d.createdAt.toDate() : new Date(d.createdAt._seconds * 1000);
+      return created >= todayStart;
+    }).length;
+
+    sendSuccess(res, { todayCreated, drafts, pendingSync, failed });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

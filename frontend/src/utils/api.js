@@ -65,6 +65,23 @@ export function getErrorMessage(error) {
   };
 }
 
+/**
+ * Convert any error to a human-readable message for UI display.
+ * Strips raw Firestore gRPC codes and technical jargon.
+ */
+export function humanizeError(err) {
+  if (!err) return 'An unknown error occurred.';
+  const msg = err.message || err.toString();
+  if (msg.includes('FAILED_PRECONDITION')) return 'Database index is being built. Please wait a moment and try again.';
+  if (msg.includes('PERMISSION_DENIED')) return 'You do not have permission to do this. Check your QuickBooks connection.';
+  if (msg.includes('NOT_FOUND')) return 'The requested data was not found.';
+  if (msg.includes('UNAVAILABLE')) return 'Service temporarily unavailable. Please try again in a moment.';
+  if (msg.includes('UNAUTHENTICATED')) return 'Session expired. Please reconnect QuickBooks.';
+  if (msg.includes('fetch') || msg.includes('network') || msg.includes('NetworkError')) return 'Could not reach the server. Check your internet connection.';
+  if (msg.includes('QBO_AUTH_EXPIRED')) return 'QuickBooks session expired. Please reconnect on the QBO Connect page.';
+  return msg;
+}
+
 export const api = {
   get: (path) => request(path),
   post: (path, body) => request(path, { method: 'POST', body: JSON.stringify(body) }),
@@ -91,6 +108,7 @@ export const api = {
 
   getPoDrafts: () => api.get('/po/drafts'),
   getPoHistory: () => api.get('/po/history'),
+  getPoStats: () => api.get('/po/stats'),
   createPo: (body) => api.post('/po/create', body),
   approveDraft: (draftId) => api.post(`/po/approve/${draftId}`, {}),
   rejectDraft: (draftId) => api.post(`/po/drafts/${draftId}/reject`, {}),
@@ -156,7 +174,7 @@ export const api = {
   getHealth: () => api.get('/health'),
 
   // Orders (Google Sheets)
-  getOrders: () => api.get('/sheets/orders'),
+  getOrders: () => api.get(`/sheets/orders?t=${Date.now()}`),
   getOrderStatuses: () => api.get('/order-statuses'),
   setOrderStatus: (orderNumber, lineItem, status) =>
     api.put(`/order-statuses/${encodeURIComponent(orderNumber)}${lineItem ? `/${encodeURIComponent(lineItem)}` : ''}`, { status }),

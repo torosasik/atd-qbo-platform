@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ShoppingCart,
   FileText,
@@ -15,6 +16,12 @@ import {
   XCircle,
   FileSpreadsheet,
   Brain,
+  AlertTriangle,
+  Clock,
+  Database,
+  Wifi,
+  WifiOff,
+  Package,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
@@ -86,25 +93,20 @@ export default function Dashboard() {
   const [activeSection, setActiveSection] = useState(null);
   const [loading, setLoading] = useState(true);
   const [systemOk, setSystemOk] = useState(null);
-  const [stats, setStats] = useState({ drafts: 0, todayPOs: 0, todayAIReviews: 0 });
+  const [stats, setStats] = useState({ drafts: 0, todayPOs: 0, pendingSync: 0, failed: 0 });
 
   const fetchStats = useCallback(async () => {
     setLoading(true);
     try {
-      const [draftsRes, historyRes, healthRes] = await Promise.all([
-        api.getPoDrafts().catch(() => ({ drafts: [] })),
-        api.getPoHistory().catch(() => ({ history: [] })),
+      const [statsRes, healthRes] = await Promise.all([
+        api.getPoStats().catch(() => ({ drafts: 0, todayCreated: 0, pendingSync: 0, failed: 0 })),
         api.getHealth().catch(() => null),
       ]);
-      const drafts = Array.isArray(draftsRes.drafts) ? draftsRes.drafts : [];
-      const history = Array.isArray(historyRes.history) ? historyRes.history : [];
-      const todayHistory = history.filter((h) => isToday(h.createdAt || h.timestamp));
-      const todayAiReviews = todayHistory.filter((h) => h.aiReview || h.ai_status);
-
       setStats({
-        drafts: drafts.length,
-        todayPOs: todayHistory.length,
-        todayAIReviews: todayAiReviews.length,
+        drafts: statsRes.drafts || 0,
+        todayPOs: statsRes.todayCreated || 0,
+        pendingSync: statsRes.pendingSync || 0,
+        failed: statsRes.failed || 0,
       });
       setSystemOk(healthRes ? (healthRes.status === 'ok' || healthRes.status === 'healthy') : null);
     } catch (err) {
@@ -402,13 +404,40 @@ function HelpButton() {
 // Overview Section
 // --------------------------------------------------------------------------
 function OverviewSection({ stats, systemOk, loading, onRefresh, onClose }) {
+  const navigate = useNavigate();
   const [recentActivity, setRecentActivity] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState({ qbo: null, ai: null, vendors: null, items: null });
 
   useEffect(() => {
-    api.getPoHistory()
-      .then((res) => setRecentActivity((res.history || []).slice(0, 10)))
+    // Fetch recent activity from activity_logs
+    api.getActivityLogs({ limit: 5 })
+      .then((res) => setRecentActivity((res.entries || []).slice(0, 5)))
+      .catch(() => {})
+      .finally(() => setActivityLoading(false));
+
+    // Fetch health for connection status
+    api.getHealth()
+      .then((res) => {
+        const services = res.services || {};
+        setConnectionStatus({
+          qbo: services.qbo_api?.status === 'connected' ? 'connected' : services.qbo_api?.status === 'configured' ? 'configured' : 'disconnected',
+          ai: services.claude_api?.status === 'configured' || services.ollama?.status === 'connected' ? 'connected' : services.ollama?.status === 'not_configured' && services.claude_api?.status === 'not_configured' ? 'off' : 'unknown',
+          vendors: res.errors?.some((e) => e.includes('vendor')) ? 'error' : 'ok',
+          items: res.errors?.some((e) => e.includes('item')) ? 'error' : 'ok',
+        });
+      })
       .catch(() => {});
   }, []);
+
+  function StatusDot({ status }) {
+    if (status === 'connected' || status === 'ok') return <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />;
+    if (status === 'configured') return <span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-500" />;
+    if (status === 'off' || status === 'not_configured') return <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-400" />;
+    if (status === 'disconnected') return <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" />;
+    if (status === 'unknown') return <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-400" />;
+    return <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-300" />;
+  }
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -416,46 +445,159 @@ function OverviewSection({ stats, systemOk, loading, onRefresh, onClose }) {
         <X className="h-4 w-4" /> Back to Dashboard
       </button>
 
+      {/* A. PO Activity Widgets */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <DashboardBox icon={FileText} title="Pending Drafts" description="" count={stats.drafts} accentColor="bg-atd-blue" onClick={() => {}} />
-        <DashboardBox icon={ShoppingCart} title="POs Today" description="" count={stats.todayPOs} accentColor="bg-green-600" onClick={() => {}} />
-        <DashboardBox icon={Brain} title="AI Reviews" description="" count={stats.todayAIReviews} accentColor="bg-purple-500" onClick={() => {}} />
-        <div className="bg-white rounded-xl shadow-sm p-6 flex items-start justify-between">
-          <div>
-            <p className="text-sm text-gray-500 font-medium">System Status</p>
-            <div className="mt-2 flex items-center gap-2">
-              {loading ? (
-                <LoadingSpinner size="sm" color="gray" />
-              ) : systemOk === null ? (
-                <span className="text-gray-400 text-sm">Checking...</span>
-              ) : systemOk ? (
-                <>
-                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
-                  <span className="text-base font-semibold text-green-700">Connected</span>
-                </>
-              ) : (
-                <>
-                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" />
-                  <span className="text-base font-semibold text-red-700">Error</span>
-                </>
-              )}
+        {/* POs Created Today */}
+        <div className="bg-white rounded-xl shadow-sm border-l-4 border-[#0462AC] p-5">
+          {loading ? (
+            <div className="animate-pulse">
+              <div className="h-10 bg-gray-200 rounded mb-2" />
+              <div className="h-4 bg-gray-200 rounded w-24" />
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 mb-2">
+                <Package className="h-5 w-5 text-[#0462AC]" />
+                <span className="text-sm font-medium text-gray-500">POs Created Today</span>
+              </div>
+              <p className="text-3xl font-bold text-atd-dark">{stats.todayPOs}</p>
+            </>
+          )}
+        </div>
+
+        {/* Drafts */}
+        <div className="bg-white rounded-xl shadow-sm border-l-4 border-gray-400 p-5">
+          {loading ? (
+            <div className="animate-pulse">
+              <div className="h-10 bg-gray-200 rounded mb-2" />
+              <div className="h-4 bg-gray-200 rounded w-16" />
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 mb-2">
+                <FileText className="h-5 w-5 text-gray-500" />
+                <span className="text-sm font-medium text-gray-500">Drafts</span>
+              </div>
+              <p className="text-3xl font-bold text-atd-dark">{stats.drafts}</p>
+            </>
+          )}
+        </div>
+
+        {/* Pending Sync */}
+        <div className="bg-white rounded-xl shadow-sm border-l-4 border-orange-500 p-5">
+          {loading ? (
+            <div className="animate-pulse">
+              <div className="h-10 bg-gray-200 rounded mb-2" />
+              <div className="h-4 bg-gray-200 rounded w-24" />
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 mb-2">
+                <Clock className="h-5 w-5 text-orange-500" />
+                <span className="text-sm font-medium text-gray-500">Pending Sync</span>
+              </div>
+              <p className="text-3xl font-bold text-atd-dark">{stats.pendingSync}</p>
+            </>
+          )}
+        </div>
+
+        {/* Failed */}
+        <button
+          onClick={() => window.location.href = '/purchase-orders?filter=failed'}
+          className="bg-white rounded-xl shadow-sm border-l-4 border-red-500 p-5 text-left hover:shadow-md transition-shadow w-full"
+        >
+          {loading ? (
+            <div className="animate-pulse">
+              <div className="h-10 bg-gray-200 rounded mb-2" />
+              <div className="h-4 bg-gray-200 rounded w-12" />
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="h-5 w-5 text-red-500" />
+                <span className="text-sm font-medium text-gray-500">Failed</span>
+              </div>
+              <p className="text-3xl font-bold text-red-600">{stats.failed}</p>
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* B. Connection Status Panel */}
+      <div className="bg-white rounded-xl shadow-sm p-5">
+        <h3 className="text-base font-semibold text-atd-dark mb-4">Connection Status</h3>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* QuickBooks */}
+          <div className="flex items-center gap-3">
+            <StatusDot status={connectionStatus.qbo} />
+            <div>
+              <p className="text-sm font-medium text-atd-dark">QuickBooks</p>
+              <p className="text-xs text-gray-500">
+                {connectionStatus.qbo === 'connected' ? 'Connected' : connectionStatus.qbo === 'configured' ? 'Token needs refresh' : 'Not connected'}
+              </p>
             </div>
           </div>
-          <div className={`p-2 rounded-lg ${systemOk ? 'bg-green-500' : 'bg-red-500'}`}>
-            {systemOk ? <CheckCircle className="h-6 w-6 text-white" /> : <XCircle className="h-6 w-6 text-white" />}
+
+          {/* AI Assistant */}
+          <div className="flex items-center gap-3">
+            <StatusDot status={connectionStatus.ai} />
+            <div>
+              <p className="text-sm font-medium text-atd-dark">AI Assistant</p>
+              <p className="text-xs text-gray-500">
+                {connectionStatus.ai === 'connected' ? 'Available' : connectionStatus.ai === 'off' ? 'Disabled' : 'Unknown'}
+              </p>
+            </div>
+          </div>
+
+          {/* Vendor List */}
+          <div className="flex items-center gap-3">
+            <StatusDot status={connectionStatus.vendors} />
+            <div>
+              <p className="text-sm font-medium text-atd-dark">Vendor List</p>
+              <p className="text-xs text-gray-500">
+                {connectionStatus.vendors === 'ok' ? 'Synced' : 'Sync needed'}
+              </p>
+            </div>
+          </div>
+
+          {/* Product/Item List */}
+          <div className="flex items-center gap-3">
+            <StatusDot status={connectionStatus.items} />
+            <div>
+              <p className="text-sm font-medium text-atd-dark">Product List</p>
+              <p className="text-xs text-gray-500">
+                {connectionStatus.items === 'ok' ? 'Synced' : 'Sync needed'}
+              </p>
+            </div>
           </div>
         </div>
       </div>
 
+      {/* C. Recent Activity */}
       <div className="bg-white rounded-xl shadow-sm">
-        <div className="px-6 py-4 border-b border-gray-100">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-base font-semibold text-atd-dark">Recent Activity</h2>
+          <button
+            onClick={() => window.location.href = '/activity-log'}
+            className="text-sm text-atd-blue hover:text-blue-700"
+          >
+            View all →
+          </button>
         </div>
         <div className="overflow-x-auto">
-          {recentActivity.length === 0 ? (
+          {activityLoading ? (
+            <div className="p-6 space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="animate-pulse flex gap-4">
+                  <div className="h-4 bg-gray-200 rounded w-24" />
+                  <div className="h-4 bg-gray-200 rounded flex-1" />
+                  <div className="h-4 bg-gray-200 rounded w-16" />
+                </div>
+              ))}
+            </div>
+          ) : recentActivity.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
-              <p className="text-lg font-medium mb-2">No activity yet</p>
-              <p className="text-sm">Create your first Purchase Order to see activity here.</p>
+              <p className="text-sm">No recent activity.</p>
             </div>
           ) : (
             <table className="w-full text-sm">
@@ -463,22 +605,19 @@ function OverviewSection({ stats, systemOk, loading, onRefresh, onClose }) {
                 <tr className="bg-gray-50 text-left text-xs font-semibold text-gray-500 uppercase">
                   <th className="px-6 py-3">Date/Time</th>
                   <th className="px-6 py-3">Action</th>
-                  <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3">Details</th>
+                  <th className="px-6 py-3">Type</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {recentActivity.map((item, idx) => (
                   <tr key={item.id || idx}>
-                    <td className="px-6 py-3 text-gray-500">{formatDateTime(item.timestamp)}</td>
-                    <td className="px-6 py-3 font-medium text-atd-dark">{item.action || 'Create'}</td>
+                    <td className="px-6 py-3 text-gray-500 whitespace-nowrap">{formatDateTime(item.timestamp)}</td>
+                    <td className="px-6 py-3 font-medium text-atd-dark">{item.action || '-'}</td>
                     <td className="px-6 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                        item.status === 'success' ? 'bg-green-100 text-green-700' :
-                        item.status === 'error' ? 'bg-red-100 text-red-700' : 'bg-gray-100'
-                      }`}>{item.status}</span>
+                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                        {item.type || '-'}
+                      </span>
                     </td>
-                    <td className="px-6 py-3 text-gray-500">{item.vendorName || item.error || '-'}</td>
                   </tr>
                 ))}
               </tbody>

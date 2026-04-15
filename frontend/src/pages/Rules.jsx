@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, Trash2, RefreshCw } from 'lucide-react';
-import { api } from '../utils/api';
+import { Plus, Pencil, Trash2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { api, humanizeError } from '../utils/api';
 import Toggle from '../components/shared/Toggle';
 
 const RULE_TYPES = ['SKU_MAPPING', 'PRICING', 'NAMING', 'UNIT_CONVERSION'];
@@ -132,7 +132,7 @@ export default function Rules() {
       setRules(rulesRes.data?.rules || []);
       setVendors(mappingsRes.data?.mappings?.vendors || []);
     } catch (err) {
-      setError(err.message || 'Failed to load rules');
+      setError(humanizeError(err));
     } finally {
       setLoading(false);
     }
@@ -155,7 +155,7 @@ export default function Rules() {
       setEditingRule(null);
       await load();
     } catch (err) {
-      setError(err.message || 'Failed to save rule');
+      setError(humanizeError(err));
     }
   }
 
@@ -164,7 +164,7 @@ export default function Rules() {
       await api.updateRule(rule.id, { active: !rule.active });
       await load();
     } catch (err) {
-      setError(err.message || 'Failed to update rule');
+      setError(humanizeError(err));
     }
   }
 
@@ -173,7 +173,7 @@ export default function Rules() {
       await api.deleteRule(id);
       await load();
     } catch (err) {
-      setError(err.message || 'Failed to delete rule');
+      setError(humanizeError(err));
     }
   }
 
@@ -190,7 +190,15 @@ export default function Rules() {
         </div>
       </div>
 
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>}
+      {error && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-amber-800">{error}</p>
+          </div>
+          <button onClick={load} className="text-sm text-amber-700 hover:text-amber-900 font-medium">Try Again</button>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border overflow-hidden">
         <table className="w-full text-sm">
