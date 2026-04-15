@@ -23,6 +23,7 @@ const activityLogRoutes = require('./api/activity-log');
 const orderStatusRoutes = require('./api/order-status-routes');
 const rulesRoutes = require('./api/rules');
 const orderFulfillmentRoutes = require('./api/order-fulfillment-routes');
+const itemsRoutes = require('./api/items-routes');
 const { logAction } = require('./core/logger');
 
 // ---------------------------------------------------------------------------
@@ -63,6 +64,7 @@ apiRouter.use('/payments', paymentRoutes);
 apiRouter.use('/expenses', expenseRoutes);
 apiRouter.use('/ai', aiRoutes);
 apiRouter.use('/vendor', vendorRoutes); // /vendor/mappings, /vendor/mappings/sync // /vendor-mappings
+apiRouter.use('/items', itemsRoutes); // /items/catalog, /items/catalog/sync, /items/catalog/active
 apiRouter.use('/health', healthRoutes); // health
 apiRouter.use('/activity-log', activityLogRoutes);
 apiRouter.use('/order-statuses', orderStatusRoutes);

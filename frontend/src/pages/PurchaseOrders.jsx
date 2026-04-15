@@ -522,7 +522,7 @@ function CreateNewItemModal({ isOpen, onClose, onSuccess, initialName }) {
 // ---------------------------------------------------------------------------
 // Tab 1: Create New
 // ---------------------------------------------------------------------------
-function CreateTab({ vendors, qboVendors, items, vendorsLoading, itemsLoading, vendorsError, itemsError, onSwitchToHistory, onRefreshItems, onRetryVendors, onRetryItems, prefillRows, prefillHeaders }) {
+function CreateTab({ vendors, qboVendors, items, vendorsLoading, itemsLoading, vendorsError, itemsError, onSwitchToHistory, onRefreshItems, onRetryVendors, onRetryItems, onSyncItems, syncingItems, prefillRows, prefillHeaders }) {
   const [form, setForm] = useState({
     vendorId: '',
     vendorName: '',
@@ -1028,14 +1028,26 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, itemsLoading, v
       <div className="bg-white rounded-xl shadow-sm p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold text-atd-dark">Line Items</h2>
-          <button
-            type="button"
-            onClick={addLine}
-            className="flex items-center gap-1.5 text-sm text-atd-blue hover:text-blue-700 font-medium transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            Add Line
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onSyncItems}
+              disabled={syncingItems}
+              className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-atd-blue font-medium transition-colors disabled:opacity-50"
+              title="Sync items from QuickBooks Online"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncingItems ? 'animate-spin' : ''}`} />
+              {syncingItems ? 'Syncing...' : 'Sync Items from QBO'}
+            </button>
+            <button
+              type="button"
+              onClick={addLine}
+              className="flex items-center gap-1.5 text-sm text-atd-blue hover:text-blue-700 font-medium transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              Add Line
+            </button>
+          </div>
         </div>
 
         {!itemsLoading && itemsError && (
@@ -1986,6 +1998,24 @@ export default function PurchaseOrders({ initialTab }) {
   const [itemsLoading, setItemsLoading] = useState(true);
   const [vendorsError, setVendorsError] = useState(null);
   const [itemsError, setItemsError] = useState(null);
+  const [syncingItems, setSyncingItems] = useState(false);
+
+  // Sync items catalog from QBO
+  async function handleSyncItems() {
+    setSyncingItems(true);
+    try {
+      const res = await api.syncItemsCatalog();
+      const itemList = res.items || res.data?.items || [];
+      setCache('itemsCatalog', itemList);
+      setItems(itemList);
+      setItemsError(null);
+    } catch (err) {
+      console.warn('[PO] Failed to sync items catalog:', err);
+      setItemsError(err.message || 'Failed to sync items from QBO');
+    } finally {
+      setSyncingItems(false);
+    }
+  }
 
   // Fetch items from API (used to refresh after creating a new item)
   async function fetchItems() {
@@ -2044,12 +2074,22 @@ export default function PurchaseOrders({ initialTab }) {
     }
 
     async function loadItems() {
-      let itemList = getCached('items');
+      // Use local items catalog (synced from QBO) instead of direct QBO fetch
+      let itemList = getCached('itemsCatalog');
       if (!itemList) {
-        const iRes = await api.getItems();
-        itemList = iRes.items || iRes.data || iRes;
-        itemList = Array.isArray(itemList) ? itemList : [];
-        setCache('items', itemList);
+        try {
+          const iRes = await api.getActiveItemsCatalog();
+          itemList = iRes.items || iRes.data?.items || [];
+          itemList = Array.isArray(itemList) ? itemList : [];
+          setCache('itemsCatalog', itemList);
+        } catch (err) {
+          console.warn('[PurchaseOrders] Failed to load items catalog, falling back to direct QBO:', err);
+          // Fallback to direct QBO if catalog endpoint fails
+          const iRes = await api.getItems();
+          itemList = iRes.items || iRes.data || iRes;
+          itemList = Array.isArray(itemList) ? itemList : [];
+          setCache('items', itemList);
+        }
       }
       return itemList;
     }
@@ -2141,7 +2181,7 @@ export default function PurchaseOrders({ initialTab }) {
       </div>
 
       {activeTab === 0 && (
-        <CreateTab vendors={vendors} qboVendors={qboVendors} items={items} vendorsLoading={vendorsLoading} itemsLoading={itemsLoading} vendorsError={vendorsError} itemsError={itemsError} onSwitchToHistory={() => setActiveTab(2)} onRefreshItems={fetchItems} onRetryVendors={loadLists} onRetryItems={fetchItems} prefillRows={prefillRows} prefillHeaders={prefillHeaders} />
+        <CreateTab vendors={vendors} qboVendors={qboVendors} items={items} vendorsLoading={vendorsLoading} itemsLoading={itemsLoading} vendorsError={vendorsError} itemsError={itemsError} onSwitchToHistory={() => setActiveTab(2)} onRefreshItems={fetchItems} onRetryVendors={loadLists} onRetryItems={fetchItems} onSyncItems={handleSyncItems} syncingItems={syncingItems} prefillRows={prefillRows} prefillHeaders={prefillHeaders} />
       )}
       {activeTab === 1 && <DraftsTab />}
       {activeTab === 2 && <HistoryTab />}

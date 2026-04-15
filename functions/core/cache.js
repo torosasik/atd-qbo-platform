@@ -159,17 +159,31 @@ async function refreshVendors(realmId) {
 async function refreshItems(realmId) {
   try {
     const { records: items, intuitTid } = await fetchAllFromQbo(realmId, 'Item');
-    const docId = `items_${realmId}`;
 
-    await saveToCache(docId, realmId, items);
+    // Store only lightweight fields to avoid Firestore 1MB document limit
+    const lightweightItems = items.map((item) => ({
+      Id: item.Id,
+      Name: item.Name || '',
+      Sku: item.Sku || '',
+      Type: item.Type || '',
+      UnitPrice: item.UnitPrice != null ? item.UnitPrice : null,
+      PurchaseCost: item.PurchaseCost != null ? item.PurchaseCost : null,
+      Active: item.Active !== false,
+      PreferredVendorRef: item.PreferredVendorRef || null,
+    }));
+
+    // NOTE: We no longer cache items in the 'cache' collection to avoid Firestore 1MB doc limit.
+    // Items are now stored in the 'item_catalog' collection via the items-routes.js sync endpoint.
+    // This function returns the lightweight items for immediate use but does not persist them.
 
     await logAction('cache', 'refresh-items', 'success', {
       realmId,
-      count: items.length,
-      intuitTid
+      count: lightweightItems.length,
+      intuitTid,
+      note: 'Items not cached to Firestore — use item_catalog collection instead'
     });
 
-    return items;
+    return lightweightItems;
   } catch (err) {
     await logAction('cache', 'refresh-items', 'error', {
       realmId,

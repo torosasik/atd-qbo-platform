@@ -78,6 +78,14 @@ export const api = {
   getVendors: () => api.get('/vendors'),
   getVendorMappings: () => api.get('/vendor/mappings'),
   getActiveVendors: () => api.get('/vendor/mappings/active'),
+
+  // Items — local catalog (preferred for PO dropdowns)
+  getItemsCatalog: () => api.get('/items/catalog'),
+  getActiveItemsCatalog: () => api.get('/items/catalog/active'),
+  syncItemsCatalog: () => api.post('/items/catalog/sync', {}),
+  updateItemsCatalog: (items) => api.put('/items/catalog', { items }),
+
+  // Items — direct QBO (legacy, kept for backward compatibility)
   getItems: () => api.get('/items'),
   createItem: (body) => api.post('/items/create', body),
 

@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const fetch = require('node-fetch');
 const { getCachedVendors, getCachedItems, getCachedCustomers, getCachedAccounts, fetchOpenInvoices, refreshItems, refreshVendors, refreshCustomers } = require('../core/cache');
 const { getRealmId, refreshAccessToken, getQboBaseUrl, getValidAccessToken, ensureValidToken } = require('../core/qbo-auth');
 const { getSettings } = require('../core/settings');
@@ -117,21 +118,40 @@ router.post('/items/create', validateRequest(schemas.itemCreate), async (req, re
     // QBO requires account refs depending on item type:
     //   NonInventory / Service → IncomeAccountRef + ExpenseAccountRef
     //   Inventory               → IncomeAccountRef + AssetAccountRef + COGSAccountRef
+    // Look up account IDs dynamically from the user's QBO accounts instead of hardcoding.
     const settings = await getSettings();
-    const incomeAcct  = settings.qbo.default_income_account  || '80';
-    const expenseAcct = settings.qbo.default_expense_account || '67';
-    const assetAcct   = settings.qbo.default_asset_account   || '81';
-    const cogsAcct    = settings.qbo.default_cogs_account    || '67';
+    const accounts = await getCachedAccounts(realmId);
+
+    // Helper: find first account matching a type (case-insensitive)
+    function findAccountByType(accountType) {
+      const normalized = accountType.toLowerCase();
+      const match = accounts.find((a) => (a.AccountType || '').toLowerCase() === normalized);
+      return match ? match.Id : null;
+    }
+
+    // Helper: find account by name pattern (fallback for common defaults)
+    function findAccountByName(patterns) {
+      for (const acct of accounts) {
+        const name = (acct.Name || '').toLowerCase();
+        if (patterns.some((p) => name.includes(p))) return acct.Id;
+      }
+      return null;
+    }
+
+    const incomeAcct  = settings.qbo.default_income_account  || findAccountByType('Income')  || findAccountByName(['sales', 'income', 'revenue']);
+    const expenseAcct = settings.qbo.default_expense_account || findAccountByType('Expense') || findAccountByName(['expense', 'supplies', 'materials']);
+    const assetAcct   = settings.qbo.default_asset_account   || findAccountByType('Other Current Asset') || findAccountByName(['inventory asset', 'asset']);
+    const cogsAcct    = settings.qbo.default_cogs_account    || findAccountByType('Cost of Goods Sold')  || findAccountByName(['cost of goods', 'cogs']);
 
     if (type === 'Inventory') {
-      itemPayload.IncomeAccountRef = { value: incomeAcct };
-      itemPayload.AssetAccountRef  = { value: assetAcct };
-      itemPayload.COGSAccountRef   = { value: cogsAcct };
+      if (incomeAcct)  itemPayload.IncomeAccountRef = { value: incomeAcct };
+      if (assetAcct)   itemPayload.AssetAccountRef  = { value: assetAcct };
+      if (cogsAcct)    itemPayload.COGSAccountRef   = { value: cogsAcct };
       itemPayload.QtyOnHand = 0;
     } else {
       // NonInventory / Service items require both IncomeAccountRef and ExpenseAccountRef
-      itemPayload.IncomeAccountRef  = { value: incomeAcct };
-      itemPayload.ExpenseAccountRef = { value: expenseAcct };
+      if (incomeAcct)  itemPayload.IncomeAccountRef  = { value: incomeAcct };
+      if (expenseAcct) itemPayload.ExpenseAccountRef = { value: expenseAcct };
     }
 
     const createUrl = `${qboBaseUrl}/v3/company/${realmId}/item`;
