@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Fragment, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Plus,
@@ -11,8 +11,6 @@ import {
   ChevronRight,
   Trash2,
   MapPin,
-  Mail,
-  Search,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import { getCached, setCache, invalidateAll } from '../utils/dataCache';
@@ -42,8 +40,6 @@ function StatusBadge({ status }) {
     </span>
   );
 }
-
-const SHIP_TO_ADDRESS = 'American Tile Depot, 1440 S State College Blvd Ste 6G, Anaheim, CA 92806';
 
 const UNIT_OPTIONS = ['Sq Ft', 'Box', 'Piece', 'Each', 'Linear Ft', 'Pallet', 'Sheet', 'Case', 'Roll', 'Other'];
 
@@ -981,7 +977,7 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, itemsLoading, v
               type="text"
               value={form.poNumber}
               onChange={(e) => setField('poNumber', e.target.value)}
-              placeholder="Shopify Order #"
+              placeholder="e.g., 1234 or PO-2026-001"
               required
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-atd-blue"
             />
@@ -1407,7 +1403,12 @@ function DraftsTab() {
             <LoadingSpinner size="lg" color="atd-blue" />
           </div>
         ) : error ? null : drafts.length === 0 ? (
-          <div className="text-center py-12 text-gray-400 text-sm">No pending drafts.</div>
+          <div className="text-center py-12 text-sm">
+            <p className="text-gray-400">No pending drafts.</p>
+            <p className="mt-1 text-xs text-gray-400">
+              Create a PO or import from Google Sheets to populate this list.
+            </p>
+          </div>
         ) : (
           <>
           <div className="overflow-x-auto">
@@ -1428,8 +1429,8 @@ function DraftsTab() {
                   const draftKey = draft.id || draft.draftId;
                   const isExpanded = expandedDraftId === draftKey;
                   return (
-                    <>
-                      <tr key={draftKey} className="hover:bg-gray-50 transition-colors">
+                    <Fragment key={draftKey}>
+                      <tr className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-3 font-medium text-atd-dark">
                           {draft.vendorName || draft.vendor?.DisplayName || '-'}
                         </td>
@@ -1480,7 +1481,7 @@ function DraftsTab() {
                         </td>
                       </tr>
                       {isExpanded && (
-                        <tr key={`${draftKey}-detail`}>
+                        <tr>
                           <td colSpan={7} className="px-6 py-3 bg-gray-50">
                             <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Line Items</div>
                             <table className="w-full text-xs">
@@ -1510,7 +1511,7 @@ function DraftsTab() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -1604,7 +1605,12 @@ function HistoryTab() {
             <LoadingSpinner size="lg" color="atd-blue" />
           </div>
         ) : error ? null : history.length === 0 ? (
-          <div className="text-center py-12 text-gray-400 text-sm">No history yet.</div>
+          <div className="text-center py-12 text-sm">
+            <p className="text-gray-400">No history yet.</p>
+            <p className="mt-1 text-xs text-gray-400">
+              Approved purchase orders will appear here once they are pushed to QuickBooks.
+            </p>
+          </div>
         ) : (
           <>
           <div className="overflow-x-auto">
@@ -2017,14 +2023,15 @@ export default function PurchaseOrders({ initialTab }) {
     }
   }
 
-  // Fetch items from API (used to refresh after creating a new item)
+  // Fetch items from API (used to refresh after creating a new item).
+  // Writes to the 'itemsCatalog' cache key so subsequent loadLists() reads hit the cache.
   async function fetchItems() {
     try {
       setItemsError(null);
       const res = await api.getItems();
       const itemList = res.items || res.data || res;
       const parsed = Array.isArray(itemList) ? itemList : [];
-      setCache('items', parsed);
+      setCache('itemsCatalog', parsed);
       setItems(parsed);
     } catch (err) {
       console.warn('[PO] Failed to load items:', err);
@@ -2081,15 +2088,16 @@ export default function PurchaseOrders({ initialTab }) {
           const iRes = await api.getActiveItemsCatalog();
           itemList = iRes.items || iRes.data?.items || [];
           itemList = Array.isArray(itemList) ? itemList : [];
-          setCache('itemsCatalog', itemList);
         } catch (err) {
           console.warn('[PurchaseOrders] Failed to load items catalog, falling back to direct QBO:', err);
           // Fallback to direct QBO if catalog endpoint fails
           const iRes = await api.getItems();
           itemList = iRes.items || iRes.data || iRes;
           itemList = Array.isArray(itemList) ? itemList : [];
-          setCache('items', itemList);
         }
+        // Always cache under 'itemsCatalog' so subsequent reads hit the cache
+        // regardless of whether the catalog or fallback path populated it.
+        setCache('itemsCatalog', itemList);
       }
       return itemList;
     }

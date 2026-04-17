@@ -38,6 +38,13 @@ Internal automation platform for American Tile Depot connecting Google Sheets an
    ```
 6. Start emulators: `npm run emulate`
 
+## Testing
+Run all unit tests (frontend + functions) from repo root:
+```
+npm test
+```
+For reviews, follow [`docs/REVIEW_CHECKLIST.md`](docs/REVIEW_CHECKLIST.md).
+
 ## Project Structure
 See CLAUDE.md for full architecture documentation.
 
