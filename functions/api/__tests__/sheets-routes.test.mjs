@@ -1,7 +1,30 @@
 import { describe, it, expect } from 'vitest';
 import sheetsRoutesModule from '../sheets-routes.js';
 
-const { transposeSheetData } = sheetsRoutesModule.__test__;
+const { transposeSheetData, CACHE_SCHEMA_VERSION } = sheetsRoutesModule.__test__;
+
+describe('CACHE_SCHEMA_VERSION', () => {
+  it('is exported as a number ≥ 2', () => {
+    expect(typeof CACHE_SCHEMA_VERSION).toBe('number');
+    expect(CACHE_SCHEMA_VERSION).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('transposeSheetData annotation filter', () => {
+  it('drops annotation columns whose Order # looks like prose', () => {
+    const headers = ['Field', 'B', 'C', 'D'];
+    const data = [
+      { Field: 'Order #',   B: '#4202-47117', C: '4202-47116', D: 'when we create purchase orders we use only the last five digit of this number' },
+      { Field: 'SKU',       B: 'ELY-PR1287',  C: 'SP696',      D: 'please use the five-digit portion only' },
+      { Field: 'Vendor',    B: 'Samples',     C: 'OTS',        D: 'we need to ensure mapping' },
+      { Field: 'Item Name', B: 'Tile',        C: 'Tile',       D: 'notes about vendor mapping' },
+      { Field: 'Qty',       B: '1',           C: '2',          D: '' },
+    ];
+    const result = transposeSheetData(headers, data);
+    expect(result.rows).toHaveLength(2);
+    expect(result.rows.map(r => r['Order #'])).toEqual(['#4202-47117', '4202-47116']);
+  });
+});
 
 /**
  * Regression tests for the "Orders page only shows 2 orders" bug.

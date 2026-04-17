@@ -10,6 +10,10 @@ const router = express.Router();
 
 const ORDERS_CACHE_DOC = 'cache/sheets_orders';
 const CACHE_TTL_MS = 5 * 60 * 1000;
+// Bump this whenever the shape/correctness of the cache payload changes
+// (e.g. a fix to transposeSheetData or readSheetData). Cache entries with
+// a different schemaVersion are treated as a miss and re-populated.
+const CACHE_SCHEMA_VERSION = 2;
 /**
  * Detect and transpose column-oriented sheet data.
  * The master sheet has field names in column A and each subsequent column
@@ -50,7 +54,19 @@ function transposeSheetData(headers, rows) {
       obj[fieldName] = value;
       if (value) hasAnyValue = true;
     }
-    if (hasAnyValue) newRows.push(obj);
+    // Drop obvious annotation / free-form-note columns. Real order numbers
+    // look like `#4202-47117` or `4202-47116` — short tokens without spaces.
+    // Prose lives in the Order # cell when users scribble notes in an
+    // otherwise-order-shaped column.
+    const orderNumKey = Object.keys(obj).find(
+      (k) => k.toLowerCase() === 'order #' || k.toLowerCase() === 'order number'
+    );
+    const orderNumValue = orderNumKey ? String(obj[orderNumKey] || '').trim() : '';
+    const looksLikeAnnotation =
+      orderNumValue.length > 50 ||
+      /\s{2,}/.test(orderNumValue) ||
+      /[a-z]{4,}\s+[a-z]{4,}/i.test(orderNumValue);
+    if (hasAnyValue && !looksLikeAnnotation) newRows.push(obj);
   }
 
   return { headers: newHeaders, rows: newRows };
@@ -311,10 +327,15 @@ router.get('/orders', async (req, res, next) => {
     const cacheSnap = await cacheRef.get();
     const now = Date.now();
 
-    if (cacheSnap.exists) {
+    const forceRefresh = String(req.query.refresh || '') === '1';
+    if (cacheSnap.exists && !forceRefresh) {
       const cache = cacheSnap.data() || {};
       const cachedAtMs = cache.cachedAtMs || 0;
-      if (cachedAtMs > 0 && now - cachedAtMs < CACHE_TTL_MS) {
+      const cacheIsFresh =
+        cachedAtMs > 0 &&
+        now - cachedAtMs < CACHE_TTL_MS &&
+        cache.schemaVersion === CACHE_SCHEMA_VERSION;
+      if (cacheIsFresh) {
         sendSuccess(res, {
           headers: cache.headers || [],
           rows: cache.rows || [],
@@ -349,6 +370,7 @@ router.get('/orders', async (req, res, next) => {
           headers,
           rows,
           cachedAtMs: now,
+          schemaVersion: CACHE_SCHEMA_VERSION,
           updatedAt: FieldValue.serverTimestamp(),
           lastSuccessfulSyncAt: FieldValue.serverTimestamp(),
         },
@@ -466,4 +488,4 @@ router.post('/import', async (req, res, next) => {
 
 module.exports = router;
 // Exported for unit testing only — do not depend on these from production code.
-module.exports.__test__ = { transposeSheetData, mapRowsForPoGrouping };
+module.exports.__test__ = { transposeSheetData, mapRowsForPoGrouping, CACHE_SCHEMA_VERSION };
