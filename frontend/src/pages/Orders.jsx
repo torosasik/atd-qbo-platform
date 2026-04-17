@@ -6,12 +6,14 @@ import {
   Check,
   ChevronUp,
   ChevronDown,
+  ChevronLeft,
   Eye,
   X,
   Save,
   Package,
   DollarSign,
   ChevronRight,
+  FileText,
 } from 'lucide-react';
 import { api } from '../utils/api';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
@@ -52,6 +54,8 @@ const MANDATORY_COLUMNS = ['Order #', 'Item Name', 'Qty', 'SKU'];
 const COL_PREFS_KEY = 'atd.orders.column_prefs.v1';
 const ORDERS_CACHE_KEY = 'atd.orders.last_payload.v1';
 const ORDERS_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
+const DEFAULT_PAGE_SIZE = 50;
 
 const PRIORITY_COPY_HEADERS = new Set([
   'sku',
@@ -187,6 +191,159 @@ function CopyCell({ value, enabled = false }) {
       </button>
       )}
     </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Pagination Controls
+// ---------------------------------------------------------------------------
+
+export function PaginationControls({ page, pageSize, totalItems, onPageChange, onPageSizeChange }) {
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const startItem = totalItems === 0 ? 0 : (page - 1) * pageSize + 1;
+  const endItem = Math.min(page * pageSize, totalItems);
+
+  return (
+    <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-t border-gray-100 text-sm">
+      <div className="flex items-center gap-3 text-gray-500">
+        <span>{totalItems === 0 ? '0 rows' : `${startItem}–${endItem} of ${totalItems}`}</span>
+        <span className="text-gray-300">|</span>
+        <label className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-400">Rows per page:</span>
+          <select
+            value={pageSize}
+            onChange={(e) => onPageSizeChange(Number(e.target.value))}
+            className="border border-gray-200 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-atd-blue"
+            aria-label="Rows per page"
+          >
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <option key={size} value={size}>{size}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="text-gray-500 text-xs">Page {page} of {totalPages}</span>
+        <button
+          onClick={() => onPageChange(page - 1)}
+          disabled={page <= 1}
+          className="p-1 rounded hover:bg-gray-200 text-gray-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          title="Previous page"
+          aria-label="Previous page"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => onPageChange(page + 1)}
+          disabled={page >= totalPages}
+          className="p-1 rounded hover:bg-gray-200 text-gray-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          title="Next page"
+          aria-label="Next page"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Receipt Modal (shown after PO creation to confirm selected orders)
+// ---------------------------------------------------------------------------
+
+export function ReceiptModal({ receipt, onClose, onContinue }) {
+  if (!receipt) return null;
+  const { type, createdAt, orders = [], drafts = [] } = receipt;
+  const isAuto = type === 'auto';
+  const title = isAuto ? 'Purchase Orders Created' : 'Selected Orders';
+  const subtitle = isAuto
+    ? `${drafts.length} purchase order draft${drafts.length !== 1 ? 's' : ''} created from ${orders.length} order row${orders.length !== 1 ? 's' : ''}.`
+    : `${orders.length} order row${orders.length !== 1 ? 's' : ''} ready for manual purchase order creation.`;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="receipt-title"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-green-100 text-green-600">
+              <FileText className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 id="receipt-title" className="text-lg font-semibold text-atd-dark">{title}</h2>
+              <p className="text-xs text-gray-500">{createdAt}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600" aria-label="Close receipt">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="px-6 py-4 overflow-y-auto flex-1">
+          <p className="text-sm text-gray-700 mb-4">{subtitle}</p>
+
+          {drafts.length > 0 && (
+            <div className="mb-4">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Purchase Order Drafts</h3>
+              <ul className="divide-y divide-gray-100 border border-gray-200 rounded-lg" data-testid="receipt-drafts">
+                {drafts.map((d, idx) => (
+                  <li key={d.draftId || idx} className="px-3 py-2 text-sm flex items-center justify-between gap-3">
+                    <span className="font-mono text-xs text-gray-600 truncate" title={d.draftId}>{d.draftId || '—'}</span>
+                    {d.vendorName && <span className="text-gray-700 text-right truncate">{d.vendorName}</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Selected Order Lines</h3>
+            <ul className="divide-y divide-gray-100 border border-gray-200 rounded-lg" data-testid="receipt-orders">
+              {orders.map((o, idx) => (
+                <li key={idx} className="px-3 py-2 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold text-atd-dark truncate">
+                      #{o.orderNumber || '—'}{o.lineItem ? ` / ${o.lineItem}` : ''}
+                    </span>
+                    <span className="text-xs text-gray-500 truncate">{o.vendor || '—'}</span>
+                  </div>
+                  <div className="text-xs text-gray-600 mt-0.5 truncate">
+                    {o.itemName || 'No item'}{o.sku ? ` (SKU ${o.sku})` : ''}{o.qty ? ` × ${o.qty}` : ''}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
+          >
+            Close
+          </button>
+          {onContinue && (
+            <button
+              onClick={onContinue}
+              className="flex items-center gap-2 bg-atd-blue text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
+              <Package className="h-4 w-4" />
+              {isAuto ? 'View Purchase Orders' : 'Continue to Edit'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -399,6 +556,9 @@ export default function Orders() {
   });
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [ordersDataSource, setOrdersDataSource] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [receipt, setReceipt] = useState(null);
 
   // Derived header keys
   const orderNumHeader = useMemo(() => findHeaderKey(headers, ['Order #', 'Order Number']), [headers]);
@@ -541,9 +701,24 @@ export default function Orders() {
     if (prevDisplayRowsLengthRef.current !== undefined && prevDisplayRowsLengthRef.current !== displayRows.length) {
       setSelected(new Set());
       setExpandedRow(null);
+      setPage(1);
     }
     prevDisplayRowsLengthRef.current = displayRows.length;
   }, [displayRows.length]);
+
+  // Paginate the displayRows. `idx` passed to rendered rows is the absolute
+  // index into displayRows (not the page-local index) so selections survive
+  // page changes without losing the mapping back to the row data.
+  const totalPages = Math.max(1, Math.ceil(displayRows.length / pageSize));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage);
+  }, [page, safePage]);
+  const pageStartIdx = (safePage - 1) * pageSize;
+  const pagedRows = useMemo(
+    () => displayRows.slice(pageStartIdx, pageStartIdx + pageSize),
+    [displayRows, pageStartIdx, pageSize]
+  );
 
   const colsToShow = visibleCols || headers;
 
@@ -596,21 +771,64 @@ export default function Orders() {
     }
   }
 
+  function buildReceiptOrderSummaries(selectedRows) {
+    return selectedRows.map((row) => ({
+      orderNumber: orderNumHeader ? row[orderNumHeader] : '',
+      lineItem: lineItemHeader ? row[lineItemHeader] : '',
+      itemName: itemNameHeader ? row[itemNameHeader] : '',
+      sku: skuHeader ? row[skuHeader] : '',
+      vendor: vendorHeader ? row[vendorHeader] : '',
+      qty: qtyHeader ? row[qtyHeader] : '',
+    }));
+  }
+
   function handleCreatePOManual() {
-    const selectedRows = [...selected].map((idx) => displayRows[idx]);
-    navigate('/purchase-orders', { state: { prefillRows: selectedRows, headers } });
+    const selectedRows = [...selected].map((idx) => displayRows[idx]).filter(Boolean);
+    if (selectedRows.length === 0) return;
+    // Show a receipt-style preview of the selected orders; the user confirms
+    // via "Continue to Edit" which navigates to the PurchaseOrders page with
+    // the prefilled selection.
+    setReceipt({
+      type: 'manual',
+      createdAt: new Date().toLocaleString(),
+      orders: buildReceiptOrderSummaries(selectedRows),
+      drafts: [],
+      _prefillRows: selectedRows,
+    });
   }
 
   async function handleCreatePOAuto() {
-    const selectedRows = [...selected].map((idx) => displayRows[idx]);
+    const selectedRows = [...selected].map((idx) => displayRows[idx]).filter(Boolean);
+    if (selectedRows.length === 0) return;
     try {
-      const result = await api.autoCreatePo(selectedRows, headers);
+      const response = await api.autoCreatePo(selectedRows, headers);
+      const result = response?.data || response || {};
       const created = result.created || 0;
-      setToast({ message: `${created} PO draft${created !== 1 ? 's' : ''} created from ${selectedRows.length} row${selectedRows.length !== 1 ? 's' : ''}`, type: 'success' });
+      const draftIds = Array.isArray(result.draftIds) ? result.draftIds : [];
+      setToast({
+        message: `${created} PO draft${created !== 1 ? 's' : ''} created from ${selectedRows.length} row${selectedRows.length !== 1 ? 's' : ''}`,
+        type: 'success',
+      });
+      setReceipt({
+        type: 'auto',
+        createdAt: new Date().toLocaleString(),
+        orders: buildReceiptOrderSummaries(selectedRows),
+        drafts: draftIds.map((draftId) => ({ draftId })),
+      });
       setSelected(new Set());
     } catch (err) {
       setToast({ message: err.message || 'Auto-create failed', type: 'error' });
     }
+  }
+
+  function handleReceiptContinue() {
+    if (!receipt) return;
+    if (receipt.type === 'manual' && Array.isArray(receipt._prefillRows)) {
+      navigate('/purchase-orders', { state: { prefillRows: receipt._prefillRows, headers } });
+    } else if (receipt.type === 'auto') {
+      navigate('/purchase-orders');
+    }
+    setReceipt(null);
   }
 
   async function handleSaveFulfillment(orderNumber, lineItem, data) {
@@ -834,7 +1052,8 @@ export default function Orders() {
                   </td>
                 </tr>
               ) : (
-                displayRows.map((row, idx) => {
+                pagedRows.map((row, pageLocalIdx) => {
+                  const idx = pageStartIdx + pageLocalIdx;
                   const orderNum = orderNumHeader ? row[orderNumHeader] : '';
                   const lineItem = lineItemHeader ? row[lineItemHeader] : '';
                   const statusKey = buildStatusKey(orderNum, lineItem);
@@ -919,7 +1138,25 @@ export default function Orders() {
             </tbody>
           </table>
         </div>
+        {displayRows.length > 0 && (
+          <PaginationControls
+            page={safePage}
+            pageSize={pageSize}
+            totalItems={displayRows.length}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+          />
+        )}
       </div>
+
+      {/* Receipt modal — shown after manual/auto PO creation */}
+      {receipt && (
+        <ReceiptModal
+          receipt={receipt}
+          onClose={() => setReceipt(null)}
+          onContinue={handleReceiptContinue}
+        />
+      )}
 
       {/* Toast */}
       {toast && <Toast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}

@@ -24,17 +24,35 @@ function transposeSheetData(headers, rows) {
     fieldLabels.some((label) => label.toLowerCase() === f.toLowerCase())
   ).length;
   if (matchCount < 3) return { headers, rows };
+
   const newHeaders = fieldLabels;
-  const dataColumnHeaders = headers.slice(1).filter((h) => h.length <= 30);
-  const newRows = dataColumnHeaders.map((colHeader) => {
+
+  // Use *every* actual column key present on the row objects (includes
+  // synthetic placeholder keys for blank header cells, so orders sitting
+  // under an empty header still get transposed). Previously we restricted
+  // this to `headers.slice(1).filter(h.length <= 30)`, which silently
+  // dropped orders whose header was missing, duplicated, or longer than 30
+  // characters — the root cause of the "only 2 orders" bug on the Orders
+  // page.
+  const firstRowKeys = Object.keys(rows[0] || {});
+  const candidateKeys = firstRowKeys.filter(
+    (k) => k !== labelColumn && k !== '_rowIndex'
+  );
+
+  const newRows = [];
+  for (const colHeader of candidateKeys) {
     const obj = {};
+    let hasAnyValue = false;
     for (let i = 0; i < rows.length; i++) {
       const fieldName = String(rows[i][labelColumn] || '').trim();
       if (!fieldName) continue;
-      obj[fieldName] = String(rows[i][colHeader] || '').trim();
+      const value = String(rows[i][colHeader] || '').trim();
+      obj[fieldName] = value;
+      if (value) hasAnyValue = true;
     }
-    return obj;
-  });
+    if (hasAnyValue) newRows.push(obj);
+  }
+
   return { headers: newHeaders, rows: newRows };
 }
 
@@ -447,3 +465,5 @@ router.post('/import', async (req, res, next) => {
 });
 
 module.exports = router;
+// Exported for unit testing only — do not depend on these from production code.
+module.exports.__test__ = { transposeSheetData, mapRowsForPoGrouping };

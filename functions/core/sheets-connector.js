@@ -13,18 +13,11 @@
 const { google } = require('googleapis');
 const { logAction } = require('./logger');
 
+// Unreachable from normalizeHeader (trims whitespace only, doesn't strip control chars).
+const SYNTHETIC_HEADER_PREFIX = '\x00__col_';
+
 function normalizeHeader(value) {
   return String(value || '').trim();
-}
-
-function buildHeaderKey(header, index) {
-  const normalized = String(header || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-
-  return normalized || `column_${index + 1}`;
 }
 
 /**
@@ -73,23 +66,34 @@ async function readSheetData(sheetId, tabName, headerRow = 1, dataStartRow = 2) 
   const dataStartIndex = Math.max(1, Number(dataStartRow) || 2) - 1;
   const headerCells = rawRows[headerIndex] || [];
 
-  const headers = headerCells
-    .map((value) => normalizeHeader(value))
-    .filter((value) => value.length > 0);
+  // Preserve original column alignment. Empty header cells are given synthetic
+  // names (SYNTHETIC_HEADER_PREFIX + <n>) so data-row indexing stays aligned
+  // with the sheet's real columns. This matters for column-oriented master
+  // sheets (each order is a column) that later get passed to transposeSheetData
+  // — previously we filtered blank headers and then used the filtered index to
+  // pluck row values, which silently misaligned data for every column after
+  // the gap.
+  const rawHeaderNames = headerCells.map((value, index) => {
+    const normalized = normalizeHeader(value);
+    return normalized.length > 0 ? normalized : `${SYNTHETIC_HEADER_PREFIX}${index + 1}`;
+  });
 
-  const uniqueHeaders = headers.map((header, index, arr) => {
+  const uniqueRawHeaders = rawHeaderNames.map((header, index, arr) => {
     const firstIndex = arr.indexOf(header);
     return firstIndex === index ? header : `${header}_${index + 1}`;
   });
-  const keys = uniqueHeaders.map((header, index) => buildHeaderKey(header, index));
+
+  // Visible (caller-facing) headers drop the synthetic placeholders so the
+  // Orders page doesn't render ghost columns for blank cells.
+  const headers = uniqueRawHeaders.filter((h) => !h.startsWith(SYNTHETIC_HEADER_PREFIX));
 
   const rows = rawRows
     .slice(dataStartIndex)
     .filter((row) => row.some((cell) => (cell || '').trim() !== ''))
     .map((row, rowIndex) => {
       const obj = { _rowIndex: dataStartIndex + rowIndex + 1 };
-      for (let i = 0; i < uniqueHeaders.length; i++) {
-        obj[uniqueHeaders[i]] = (row[i] || '').trim();
+      for (let i = 0; i < uniqueRawHeaders.length; i++) {
+        obj[uniqueRawHeaders[i]] = (row[i] || '').trim();
       }
       return obj;
     });
@@ -100,7 +104,7 @@ async function readSheetData(sheetId, tabName, headerRow = 1, dataStartRow = 2) 
     rowCount: rows.length,
   });
 
-  return { headers: uniqueHeaders, rows };
+  return { headers, rows };
 }
 
 /**
