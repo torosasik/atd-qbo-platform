@@ -87,11 +87,11 @@ function AIRuleModal({ open, onClose, onGenerated }) {
     setGenerating(true);
     setAiError('');
     try {
-      const systemPrompt = 'You are a business rules assistant for a tile company. Parse the user description into a JSON rule object with this exact shape: { type: one of SKU_MAPPING|PRICING|NAMING|UNIT_CONVERSION, vendor: string, active: true, rule: object }. For SKU_MAPPING rule contains { atd_sku, vendor_sku }. For PRICING rule contains { discount_percent, start_date, end_date }. For NAMING rule contains { atd_name, vendor_name }. For UNIT_CONVERSION rule contains { atd_unit, vendor_unit, conversion_factor }. Return only valid JSON, no explanation.';
+      const instructions = 'You are a business rules assistant for a tile company. Parse the following description into a JSON rule object with this exact shape: { type: one of SKU_MAPPING|PRICING|NAMING|UNIT_CONVERSION, vendor: string, active: true, rule: object }. For SKU_MAPPING rule contains { atd_sku, vendor_sku }. For PRICING rule contains { discount_percent, start_date, end_date }. For NAMING rule contains { atd_name, vendor_name }. For UNIT_CONVERSION rule contains { atd_unit, vendor_unit, conversion_factor }. Return only valid JSON, no explanation.';
+      const combinedMessage = `${instructions}\n\nUser description: ${description.trim()}`;
       const res = await api.post('/ai/chat', {
-        message: description.trim(),
-        context: 'rules',
-        system: systemPrompt,
+        message: combinedMessage,
+        context: { type: 'rules' },
       });
       const text = res.reply || res.data?.reply || res.message || res.data?.message || '';
       // Try to extract JSON from the response

@@ -125,13 +125,15 @@ export default function Dashboard() {
   }, [fetchData]);
 
   // Derive connection statuses from health response
-  const qboStatus = health?.services?.qbo;
-  const sheetsStatus = health?.services?.sheets;
-  const aiStatus = health?.services?.ai;
-
-  const qboConnected = qboStatus?.status === 'ok' || qboStatus?.status === 'healthy' || health?.status === 'ok';
-  const sheetsConnected = sheetsStatus?.status === 'ok' || sheetsStatus?.status === 'healthy';
-  const aiActive = aiStatus?.status === 'ok' || aiStatus?.status === 'healthy';
+  const qboConnected = health?.services?.qbo_api?.status === 'connected';
+  const sheetsConnected = health?.services?.google_sheets?.status === 'connected';
+  const aiActive =
+    health?.services?.claude_api?.status === 'configured' ||
+    health?.services?.claude_api?.status === 'connected' ||
+    health?.services?.ollama?.status === 'connected';
+  const aiBothUnconfigured =
+    health?.services?.claude_api?.status === 'not_configured' &&
+    health?.services?.ollama?.status === 'not_configured';
 
   return (
     <div className="h-full flex flex-col">
@@ -165,7 +167,7 @@ export default function Dashboard() {
             />
             <StatusPill
               label="AI"
-              status={aiActive ? 'Active' : 'Off'}
+              status={aiActive ? 'Active' : aiBothUnconfigured ? 'Off' : 'Unavailable'}
               color={aiActive ? 'green' : 'gray'}
             />
           </div>
