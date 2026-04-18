@@ -152,6 +152,8 @@ export const api = {
   previewSheetData: () => api.get('/sheets/preview'),
   importFromSheets: () => api.post('/sheets/import', {}),
   autoCreatePo: (rows, headers) => api.post('/po/auto-create', { rows, headers }),
+  invalidateSheetsCache: () => api.post('/sheets/invalidate', {}),
+  getSheetsOrdersDebug: () => api.get('/sheets/orders?debug=1'),
 
   // QBO Auth
   getAuthStatus: () => api.get('/auth/status'),
@@ -174,7 +176,11 @@ export const api = {
   getHealth: () => api.get('/health'),
 
   // Orders (Google Sheets)
-  getOrders: () => api.get(`/sheets/orders?t=${Date.now()}`),
+  // Pass { force: true } to bypass the 60 s server-side Firestore cache and
+  // re-read directly from Google Sheets. The Orders page wires this to its
+  // "Force Refresh" button.
+  getOrders: ({ force = false } = {}) =>
+    api.get(`/sheets/orders?t=${Date.now()}${force ? '&refresh=1' : ''}`),
   getOrderStatuses: () => api.get('/order-statuses'),
   setOrderStatus: (orderNumber, lineItem, status) =>
     api.put(`/order-statuses/${encodeURIComponent(orderNumber)}${lineItem ? `/${encodeURIComponent(lineItem)}` : ''}`, { status }),

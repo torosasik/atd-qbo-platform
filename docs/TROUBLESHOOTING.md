@@ -6,6 +6,31 @@ For anything not listed here, or if the steps below do not work, contact Toros A
 
 ---
 
+## Orders Page Shows Old Data After Editing the Google Sheet
+
+**Problem:** You edited the Google Sheet (added a new order, fixed a row, etc.) but the Orders page in the app is still showing the old data.
+
+**Cause:** The app caches sheet data in two places to avoid hammering the Google Sheets API on every page load:
+
+1. **Server cache** in Firestore (`cache/sheets_orders`): up to **60 seconds** old.
+2. **Browser cache** in localStorage (`atd.orders.last_payload.v1`): up to **24 hours** old, used only as a fallback when the live pull fails.
+
+So a sheet edit may take up to 60 seconds to appear through the regular **Refresh** button, and longer if the backend is currently falling back to the stale cache (e.g. sheet was temporarily unreachable).
+
+**Fix — in order:**
+
+1. On the Orders page, click **Force Refresh** (the blue button next to Refresh). This bypasses the server cache and re-reads the sheet live.
+2. If rows are still missing, look at the yellow banner at the top of the Orders page. If it says "Showing outdated cached data — live pull from Google Sheets failed," the backend could not reach the sheet. Open **Settings → Google Sheets** and:
+   - Verify the **Sheet ID** is correct (copy it from the sheet URL).
+   - Verify the **tab name** matches exactly (case-sensitive).
+   - Verify the sheet is still shared with the service account email shown on that page (Editor or Viewer access is fine).
+3. If the sheet is shared correctly and tab/ID match but you see an "Order # looks like prose" style issue where only some orders appear, check the "Order #" cell of the missing orders — free-form notes in that cell (longer than 50 chars, or multiple prose-style words) are filtered out. Replace the note with the actual order number and Force Refresh.
+4. Still stuck? As a last resort, clear the browser-side cache by opening DevTools (F12) → Application → Local Storage → your domain → delete the `atd.orders.last_payload.v1` entry, then reload the page.
+
+**For support / debug:** Hit `GET /sheets/orders?debug=1` (from a tool like the Health Check page) to see `{ cachedAtMs, rowCount, schemaVersion, cacheAgeMs }` — this shows exactly how stale the server cache is and whether the schema matches the current code.
+
+---
+
 ## Page Won't Load / Blank Screen
 
 **Problem:** You open the app URL and see a blank white page, a loading spinner that never goes away, or a browser error like "This site can't be reached."

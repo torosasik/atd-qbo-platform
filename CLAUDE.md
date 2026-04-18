@@ -1,5 +1,16 @@
 # ATD QBO Automation Platform
 
+## Post-completion actions (Kilo Code)
+
+At the end of every task, Kilo prints a menu with the following slash commands. Click or type any of them:
+
+- [`/push-github`](.kilocode/commands/push-github.md:1) — stage, conventional commit, push current branch, optional `gh pr create`
+- [`/deploy-firebase`](.kilocode/commands/deploy-firebase.md:1) — build frontend, then `firebase deploy --only hosting,functions,firestore:rules,firestore:indexes`
+- [`/test-code`](.kilocode/commands/test-code.md:1) — `npm test` across frontend + functions, prints pass/fail table
+- [`/test-ui`](.kilocode/commands/test-ui.md:1) — headed Playwright against local hosting emulator, walks all core flows and captures screenshots
+
+Controlled by the global rule [`.kilocode/rules/post-completion-menu.md`](.kilocode/rules/post-completion-menu.md:1).
+
 ## Project Overview
 Internal automation platform for American Tile Depot (ATD) that connects QuickBooks Online with Google Sheets, AI decision-making, and a web-based control panel. Built as a modular system where each accounting function (Purchase Orders, Invoices, Bills, Payments) is an independent module.
 

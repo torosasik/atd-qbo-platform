@@ -72,28 +72,39 @@ async function mockApiRoutes(page, options = {}) {
     }),
 
     // --- Vendors ---
-    page.route('**/api/vendors**', (route) => route.fulfill(ok(seedData.vendors))),
-    page.route('**/api/vendor/mappings**', (route) =>
-      route.fulfill(ok(seedData.vendors.filter((v) => v.active && v.visible)))
-    ),
+    // The PO page calls `api.getVendors()` and `api.getActiveVendors()`. Both
+    // endpoints return `{ success: true, data: { vendors: [...] } }` in production
+    // (see functions/api/vendor-routes.js + middleware.js), so the mocks must
+    // mirror that shape — not a bare array — or loadLists() reads `.vendors` as
+    // undefined and the PO page shows "Cannot load vendors".
+    page.route('**/api/vendors**', (route) => route.fulfill(ok({ vendors: seedData.vendors }))),
     page.route('**/api/vendor/mappings/active**', (route) =>
-      route.fulfill(ok(seedData.vendors.filter((v) => v.active && v.visible)))
+      route.fulfill(ok({ vendors: seedData.vendors.filter((v) => v.active && v.visible) }))
     ),
     page.route('**/api/vendor/mappings/sync**', (route) =>
       route.fulfill(ok({ synced: true, count: seedData.vendors.length }))
     ),
+    page.route('**/api/vendor/mappings**', (route) =>
+      route.fulfill(ok({ vendors: seedData.vendors.filter((v) => v.active && v.visible) }))
+    ),
 
     // --- Items / Catalog ---
-    page.route('**/api/items/catalog**', (route) => route.fulfill(ok(seedData.items))),
-    page.route('**/api/items/catalog/active**', (route) => route.fulfill(ok(seedData.items))),
+    // Wrap in `{ items: [...] }` because loadLists() reads `iRes.items` / `iRes.data?.items`.
+    page.route('**/api/items/catalog/active**', (route) => route.fulfill(ok({ items: seedData.items }))),
     page.route('**/api/items/catalog/sync**', (route) => route.fulfill(ok({ synced: true, count: seedData.items.length }))),
+    page.route('**/api/items/catalog**', (route) => route.fulfill(ok({ items: seedData.items }))),
+    page.route('**/api/items**', (route) => route.fulfill(ok({ items: seedData.items }))),
 
     // --- Purchase Orders ---
+    // DraftsTab reads `res.drafts ?? res.data?.drafts`, so wrap the array.
+    page.route('**/api/po/drafts/*/reject**', (route) =>
+      route.fulfill(ok({ status: 'rejected', rejectReason: 'Test rejection', message: 'Draft rejected' }))
+    ),
     page.route('**/api/po/drafts**', (route) =>
-      route.fulfill(ok(seedData.purchaseOrders.filter((p) => p.status === 'draft')))
+      route.fulfill(ok({ drafts: seedData.purchaseOrders.filter((p) => p.status === 'draft') }))
     ),
     page.route('**/api/po/history**', (route) =>
-      route.fulfill(ok(seedData.purchaseOrders))
+      route.fulfill(ok({ history: seedData.purchaseOrders, pos: seedData.purchaseOrders }))
     ),
     page.route('**/api/po/stats**', (route) =>
       route.fulfill(ok({
@@ -152,10 +163,31 @@ async function mockApiRoutes(page, options = {}) {
     ),
 
     // --- Orders / Sheets ---
-    page.route('**/api/sheets/orders**', (route) => route.fulfill(ok(seedData.orders))),
-    page.route('**/api/order-statuses**', (route) => route.fulfill(ok(seedData.orders.map((o) => ({ orderNumber: o.orderNumber, lineItem: o.lineItem, status: o.status }))))),
+    // The Orders page expects `{ headers, rows }` where each row is keyed by header name.
+    // We build that shape on the fly from the flat seed orders so both old tests (that
+    // treat orders as an array) and new tests (that render the real Orders table) work.
+    page.route('**/api/sheets/orders**', (route) => route.fulfill(ok({
+      headers: ['Order #', 'Customer', 'Item Name', 'Qty', 'SKU', 'Status', 'Fulfillment'],
+      rows: seedData.orders.map((o, i) => ({
+        'Order #': o.orderNumber,
+        'Customer': o.customer,
+        'Item Name': o.lineItem,
+        'Qty': String(o.quantity),
+        'SKU': `SKU-${String(i + 1).padStart(3, '0')}`,
+        'Status': o.status,
+        'Fulfillment': o.fulfillmentSource,
+      })),
+      lastSyncedAt: new Date().toISOString(),
+      source: 'live',
+      cachedAtMs: Date.now(),
+    }))),
+    page.route('**/api/order-statuses**', (route) => route.fulfill(ok({
+      statuses: Object.fromEntries(seedData.orders.map((o) => [`${o.orderNumber}`, o.status])),
+    }))),
     page.route('**/api/order-statuses/**', (route) => route.fulfill(ok({ updated: true }))),
-    page.route('**/api/order-fulfillment**', (route) => route.fulfill(ok(seedData.orders))),
+    page.route('**/api/order-fulfillment**', (route) => route.fulfill(ok({
+      fulfillment: Object.fromEntries(seedData.orders.map((o) => [`${o.orderNumber}`, { source: o.fulfillmentSource }])),
+    }))),
     page.route('**/api/order-fulfillment/**', (route) => route.fulfill(ok({ updated: true }))),
 
     // --- Google Sheets ---

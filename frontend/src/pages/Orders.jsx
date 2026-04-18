@@ -591,12 +591,18 @@ export default function Orders() {
   }, [visibleCols]);
 
   // Load data
-  const loadData = useCallback(async () => {
+  //
+  // When `force` is true we pass `?refresh=1` to the backend so the server
+  // re-reads from Google Sheets instead of returning its 60 s Firestore
+  // cache. We also store the server's `cachedAtMs` in localStorage so a
+  // future stale-cache fallback can tell if the client has fresher data
+  // than the server (and discard it when the server catches up).
+  const loadData = useCallback(async ({ force = false } = {}) => {
     setLoading(true);
     setError(null);
     try {
       const [ordersRes, statusesRes, fulfillmentRes] = await Promise.all([
-        api.getOrders(),
+        api.getOrders({ force }),
         api.getOrderStatuses(),
         api.getOrderFulfillment(),
       ]);
@@ -609,15 +615,39 @@ export default function Orders() {
       setFulfillment(fulfillmentRes?.data?.fulfillment || {});
       setLastSyncedAt(ordersData.lastSyncedAt || null);
       setOrdersDataSource(ordersData.source || null);
-      localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify({
-        headers: nextHeaders,
-        rows: nextRows,
-        lastSyncedAt: ordersData.lastSyncedAt || null,
-        source: ordersData.source || 'live',
-        cachedAt: new Date().toISOString(),
-      }));
-      if (ordersData.warning) {
-        setToast({ message: ordersData.warning, type: 'error' });
+      try {
+        const payload = JSON.stringify({
+          headers: nextHeaders,
+          rows: nextRows,
+          lastSyncedAt: ordersData.lastSyncedAt || null,
+          source: ordersData.source || 'live',
+          serverCachedAtMs: ordersData.cachedAtMs || 0,
+          cachedAt: new Date().toISOString(),
+        });
+        // localStorage is ~5MB; large sheets blow that quota. Skip caching
+        // when we know the payload is too big rather than throwing.
+        if (payload.length < 4_500_000) {
+          localStorage.setItem(ORDERS_CACHE_KEY, payload);
+        } else {
+          localStorage.removeItem(ORDERS_CACHE_KEY);
+        }
+      } catch {
+        // Quota errors here are not fatal — the next live pull will repopulate.
+        try { localStorage.removeItem(ORDERS_CACHE_KEY); } catch {}
+      }
+      // Prefer the structured errorCode/errorFix (set by the backend when a
+      // live pull fails and we fall back to stale-cache) over the generic
+      // `warning` string so the user sees an actionable message.
+      //
+      // We only raise a toast here — the yellow "Showing outdated cached
+      // data" banner (rendered from `ordersDataSource === 'stale-cache'`)
+      // already carries the actionable guidance, so setting `error` too
+      // would double-render the same message as a red banner.
+      if (ordersData.errorCode || ordersData.warning) {
+        const msg = ordersData.errorFix
+          ? `${ordersData.warning || 'Live sheet pull failed.'} ${ordersData.errorFix}`
+          : ordersData.warning;
+        setToast({ message: msg, type: 'error' });
       }
     } catch (err) {
       const cached = localStorage.getItem(ORDERS_CACHE_KEY);
@@ -929,9 +959,18 @@ export default function Orders() {
             </div>
           )}
         </div>
-        <button onClick={loadData} className="flex items-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">
-          <RefreshCw className="h-4 w-4" /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => loadData()} className="flex items-center gap-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">
+            <RefreshCw className="h-4 w-4" /> Refresh
+          </button>
+          <button
+            onClick={() => loadData({ force: true })}
+            title="Bypass the server cache and re-read directly from Google Sheets"
+            className="flex items-center gap-2 bg-atd-blue text-white hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm"
+          >
+            <RefreshCw className="h-4 w-4" /> Force Refresh
+          </button>
+        </div>
       </div>
 
       {/* Error with actionable message */}
@@ -950,10 +989,12 @@ export default function Orders() {
 
       {/* Stale cache warning banner */}
       {ordersDataSource && ordersDataSource.includes('stale') && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 mb-4 text-sm" role="alert">
-          <p className="font-medium">⚠ Showing outdated cached data</p>
+        <div className="bg-amber-50 border border-amber-300 text-amber-900 rounded-lg px-4 py-3 mb-4 text-sm" role="alert">
+          <p className="font-medium">⚠ Showing outdated cached data — live pull from Google Sheets failed</p>
           <p className="text-xs mt-1">
-            The latest data could not be loaded. Information may be up to {formatTimestamp(lastSyncedAt) || 'an unknown time'} old. Try refreshing later.
+            Information may be up to {formatTimestamp(lastSyncedAt) || 'an unknown time'} old.
+            Click <span className="font-semibold">Force Refresh</span> to retry, or open
+            <span className="font-semibold"> Settings → Google Sheets</span> to verify Sheet ID, tab name, and service-account access.
           </p>
         </div>
       )}

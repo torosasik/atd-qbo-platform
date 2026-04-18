@@ -5,15 +5,20 @@ const { getSettings } = require('../core/settings');
 const { readSheetData, groupByPO, testConnection } = require('../core/sheets-connector');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { sendSuccess } = require('./middleware');
+const { logAction } = require('../core/logger');
 
 const router = express.Router();
 
 const ORDERS_CACHE_DOC = 'cache/sheets_orders';
-const CACHE_TTL_MS = 5 * 60 * 1000;
+// Shortened from 5 min → 60 s so sheet edits surface within one auto-sync
+// cycle. The Orders page polls every 5 min and users can hit Refresh to
+// force a live pull via `?refresh=1`; a short TTL is just defense-in-depth
+// against thundering-herd reads of the sheet on navigation bursts.
+const CACHE_TTL_MS = 60 * 1000;
 // Bump this whenever the shape/correctness of the cache payload changes
 // (e.g. a fix to transposeSheetData or readSheetData). Cache entries with
 // a different schemaVersion are treated as a miss and re-populated.
-const CACHE_SCHEMA_VERSION = 2;
+const CACHE_SCHEMA_VERSION = 3;
 /**
  * Detect and transpose column-oriented sheet data.
  * The master sheet has field names in column A and each subsequent column
@@ -320,6 +325,10 @@ router.get('/preview', async (req, res, next) => {
 });
 
 // GET /sheets/orders
+// Query params:
+//   refresh=1   Bypass the Firestore cache and re-read from Google Sheets.
+//   debug=1     Return { cachedAtMs, rowCount, source, schemaVersion } only —
+//               cheap probe for Health Check and support debugging.
 router.get('/orders', async (req, res, next) => {
   try {
     const db = getFirestore();
@@ -328,6 +337,21 @@ router.get('/orders', async (req, res, next) => {
     const now = Date.now();
 
     const forceRefresh = String(req.query.refresh || '') === '1';
+    const debugMode = String(req.query.debug || '') === '1';
+
+    if (debugMode) {
+      const cache = cacheSnap.exists ? cacheSnap.data() || {} : {};
+      sendSuccess(res, {
+        cachedAtMs: cache.cachedAtMs || 0,
+        rowCount: Array.isArray(cache.rows) ? cache.rows.length : 0,
+        schemaVersion: cache.schemaVersion || null,
+        cacheTtlMs: CACHE_TTL_MS,
+        currentSchemaVersion: CACHE_SCHEMA_VERSION,
+        cacheAgeMs: cache.cachedAtMs ? now - cache.cachedAtMs : null,
+      });
+      return;
+    }
+
     if (cacheSnap.exists && !forceRefresh) {
       const cache = cacheSnap.data() || {};
       const cachedAtMs = cache.cachedAtMs || 0;
@@ -336,6 +360,14 @@ router.get('/orders', async (req, res, next) => {
         now - cachedAtMs < CACHE_TTL_MS &&
         cache.schemaVersion === CACHE_SCHEMA_VERSION;
       if (cacheIsFresh) {
+        // Fire-and-forget: logAction already swallows its own errors, and
+        // we don't want a Firestore write round-trip on the fresh-cache
+        // hot path.
+        logAction('sheets-routes', 'get-orders', 'success', {
+          source: 'fresh-cache',
+          rowCount: (cache.rows || []).length,
+          cacheAgeMs: now - cachedAtMs,
+        });
         sendSuccess(res, {
           headers: cache.headers || [],
           rows: cache.rows || [],
@@ -361,30 +393,17 @@ router.get('/orders', async (req, res, next) => {
       return next(error);
     }
 
+    let raw;
     try {
-      const raw = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
-      const { headers, rows } = transposeSheetData(raw.headers, raw.rows);
-
-      await cacheRef.set(
-        {
-          headers,
-          rows,
-          cachedAtMs: now,
-          schemaVersion: CACHE_SCHEMA_VERSION,
-          updatedAt: FieldValue.serverTimestamp(),
-          lastSuccessfulSyncAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-
-      sendSuccess(res, {
-        headers,
-        rows,
-        source: 'live',
-        lastSyncedAt: new Date(now).toISOString(),
-        cachedAtMs: now,
-      });
+      raw = await readSheetData(sheetId, tabName, headerRow, dataStartRow);
     } catch (liveErr) {
+      const classified = classifySheetsError(liveErr);
+      logAction('sheets-routes', 'get-orders', 'error', {
+        source: 'live-failed',
+        code: classified.code,
+        message: liveErr.message,
+        willFallbackToCache: cacheSnap.exists,
+      });
       if (cacheSnap.exists) {
         const cache = cacheSnap.data() || {};
         sendSuccess(res, {
@@ -393,12 +412,84 @@ router.get('/orders', async (req, res, next) => {
           source: 'stale-cache',
           lastSyncedAt: cache.lastSuccessfulSyncAt || cache.updatedAt || null,
           cachedAtMs: cache.cachedAtMs || 0,
-          warning: `Live sheet pull failed. Showing last successful sync. ${liveErr.message}`,
+          warning: `${classified.error} ${classified.fix}`,
+          errorCode: classified.code,
+          errorFix: classified.fix,
         });
         return;
       }
-      throw liveErr;
+      sendClassifiedSheetsError(res, liveErr);
+      return;
     }
+
+    const { headers, rows } = transposeSheetData(raw.headers, raw.rows);
+
+    // Estimate payload size; Firestore caps a single document at ~1MB and
+    // the gRPC RPC at ~11MB. With 70k+ row sheets we blow both limits, so
+    // skip caching the full payload when it's too big — the response still
+    // ships live, we just don't get cache acceleration on the next call.
+    let cacheError = null;
+    try {
+      const approxBytes = Buffer.byteLength(JSON.stringify({ headers, rows }), 'utf8');
+      const FIRESTORE_DOC_LIMIT = 900_000; // 900KB to leave headroom under the 1MB cap
+      if (approxBytes <= FIRESTORE_DOC_LIMIT) {
+        await cacheRef.set(
+          {
+            headers,
+            rows,
+            cachedAtMs: now,
+            schemaVersion: CACHE_SCHEMA_VERSION,
+            updatedAt: FieldValue.serverTimestamp(),
+            lastSuccessfulSyncAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      } else {
+        await cacheRef.set(
+          {
+            cachedAtMs: 0,
+            schemaVersion: 0,
+            tooLargeBytes: approxBytes,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+      }
+    } catch (err) {
+      cacheError = err.message;
+    }
+
+    logAction('sheets-routes', 'get-orders', 'success', {
+      source: 'live',
+      rowCount: rows.length,
+      forceRefresh,
+      cacheError,
+    });
+
+    sendSuccess(res, {
+      headers,
+      rows,
+      source: 'live',
+      lastSyncedAt: new Date(now).toISOString(),
+      cachedAtMs: now,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /sheets/invalidate  — force-invalidate the server-side orders cache.
+// The next GET /sheets/orders will perform a live pull.
+router.post('/invalidate', async (req, res, next) => {
+  try {
+    const db = getFirestore();
+    await db.doc(ORDERS_CACHE_DOC).set(
+      { cachedAtMs: 0, schemaVersion: 0 },
+      { merge: true }
+    );
+    // Fire-and-forget (see note on /orders success path).
+    logAction('sheets-routes', 'invalidate-cache', 'success', {});
+    sendSuccess(res, { invalidated: true });
   } catch (err) {
     next(err);
   }

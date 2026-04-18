@@ -191,7 +191,7 @@ function SidebarContent({ onClose, features = {} }) {
             <div key={group.label} className={gi > 0 ? 'mt-5' : ''}>
               {/* Group header — skip for first group to keep Dashboard prominent */}
               {gi > 0 && (
-                <div className="px-3 mb-2 text-[10px] font-semibold text-gray-500 uppercase tracking-widest">
+                <div className="px-3 mb-2 text-[10px] font-semibold text-gray-300 uppercase tracking-widest">
                   {group.label}
                 </div>
               )}
@@ -222,7 +222,7 @@ function SidebarContent({ onClose, features = {} }) {
 
       {/* Version */}
       <div className="px-6 py-3 border-t border-gray-600">
-        <span className="text-xs text-gray-500">{APP_VERSION}</span>
+        <span className="text-xs text-gray-300">{APP_VERSION}</span>
       </div>
     </div>
   );

@@ -22,7 +22,8 @@ test.describe('Orders & Fulfillment Flows', () => {
 
   test('orders page loads with data table', async ({ page }) => {
     await page.goto('/orders');
-    await expect(page.locator('text=Orders')).toBeVisible({ timeout: 10_000 });
+    // Use heading role to avoid strict-mode violation with sidebar links/subtext.
+    await expect(page.getByRole('heading', { name: /^Orders/ })).toBeVisible({ timeout: 10_000 });
   });
 
   test('order list shows seed data rows', async ({ page }) => {

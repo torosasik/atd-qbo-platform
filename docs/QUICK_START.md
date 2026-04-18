@@ -4,6 +4,21 @@ Welcome to the team! This guide will get you up and running with the ATD QBO Pla
 
 ---
 
+## Kilo Code post-completion menu
+
+Whenever Kilo Code finishes a task in this repo, the result ends with a clickable menu:
+
+| Command | What it does |
+|---|---|
+| [`/push-github`](../.kilocode/commands/push-github.md) | Stage, conventional commit, push current branch, optional `gh pr create` |
+| [`/deploy-firebase`](../.kilocode/commands/deploy-firebase.md) | Build frontend + `firebase deploy` (hosting, functions, firestore rules & indexes) |
+| [`/test-code`](../.kilocode/commands/test-code.md) | Run all unit/integration tests and print a pass/fail table |
+| [`/test-ui`](../.kilocode/commands/test-ui.md) | Headed Playwright; walks every core flow in a real Chromium window |
+
+Click the link or type the command after the `---` divider in the chat. Defined in [`.kilocode/rules/post-completion-menu.md`](../.kilocode/rules/post-completion-menu.md).
+
+---
+
 ## Before You Begin
 
 1. Copy `functions/.env.example` to `functions/.env` and fill in your keys:

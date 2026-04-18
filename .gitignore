@@ -45,3 +45,12 @@ functions/.env
 ATD Orders - Master List for AI.js
 
 # Temporary/scratch files
+
+# Playwright / e2e artifacts
+test-results/
+playwright-report/
+tests/e2e/visual.spec.js-snapshots/
+
+# Local screenshot dumps (never commit)
+DO NOT UPLOAD - SCREENSHOTS/
+DO NOT UPLOAD - SCREENSHOOTS/

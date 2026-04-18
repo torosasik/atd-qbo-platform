@@ -537,7 +537,10 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, itemsLoading, v
   // Prefill from Orders page: map selected order rows to PO form fields
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    if (prefillApplied || !prefillRows?.length || vendorsLoading) return;
+    // Wait for vendors AND items before applying prefill — we need both so we
+    // can match the incoming row against the items catalog and populate the
+    // item dropdown (itemId), not just the free-text description.
+    if (prefillApplied || !prefillRows?.length || vendorsLoading || itemsLoading) return;
 
     const hdrs = prefillHeaders || [];
     const findHdr = (candidates) => {
@@ -565,17 +568,35 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, itemsLoading, v
     const orderKey = findHdr(['Order #', 'Order Number']);
     const priceKey = findHdr(['Unit Price', 'Price', 'Cost']);
 
-    // Build line items from prefill rows
-    const lines = prefillRows.map((row) => ({
-      _id: generateId(),
-      itemId: '',
-      itemName: nameKey ? String(row[nameKey] || '') : '',
-      sku: skuKey ? String(row[skuKey] || '') : '',
-      description: nameKey ? String(row[nameKey] || '') : '',
-      qty: qtyKey ? (parseFloat(row[qtyKey]) || 1) : 1,
-      unit: 'Sq Ft',
-      unitPrice: priceKey ? String(row[priceKey] || '') : '',
-    }));
+    // Build line items from prefill rows.
+    // Match the order's item name/SKU against the loaded QBO items catalog so
+    // the <select value={line.itemId}> dropdown actually shows the match —
+    // otherwise users see an empty ITEM column even though the row's name and
+    // SKU are set in state.
+    const lines = prefillRows.map((row) => {
+      const rawName = nameKey ? String(row[nameKey] || '').trim() : '';
+      const rawSku = skuKey ? String(row[skuKey] || '').trim() : '';
+      const nameLower = rawName.toLowerCase();
+      const matchedItem = (items || []).find((it) => {
+        if (!it) return false;
+        if (rawSku && it.Sku && String(it.Sku).toLowerCase() === rawSku.toLowerCase()) return true;
+        if (!rawName) return false;
+        const itName = String(it.Name || it.FullyQualifiedName || '').toLowerCase();
+        return itName === nameLower || (itName && nameLower && (itName.includes(nameLower) || nameLower.includes(itName)));
+      });
+      return {
+        _id: generateId(),
+        itemId: matchedItem?.Id || '',
+        itemName: matchedItem?.Name || rawName,
+        sku: rawSku,
+        description: rawName,
+        qty: qtyKey ? (parseFloat(row[qtyKey]) || 1) : 1,
+        unit: 'Sq Ft',
+        unitPrice: priceKey
+          ? String(row[priceKey] || matchedItem?.UnitPrice || '')
+          : String(matchedItem?.UnitPrice ?? ''),
+      };
+    });
 
     // Try to match vendor from first row
     const vendorCode = vendorKey ? String(prefillRows[0][vendorKey] || '').trim() : '';
@@ -607,7 +628,7 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, itemsLoading, v
     }));
 
     setPrefillApplied(true);
-  }, [prefillRows, prefillHeaders, vendors, vendorsLoading, prefillApplied]);
+  }, [prefillRows, prefillHeaders, vendors, vendorsLoading, items, itemsLoading, prefillApplied]);
 
   const [vendorSearch, setVendorSearch] = useState('');
   const [vendorOpen, setVendorOpen] = useState(false);
