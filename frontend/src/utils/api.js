@@ -205,6 +205,11 @@ export const api = {
   },
   postActivityLog: (body) => api.post('/activity-log', body),
 
+  // SKU Conversions
+  getSkuConversionCount: () => api.get('/sku-conversions/count'),
+  getSkuConversion: (sku) => api.get(`/sku-conversions/${encodeURIComponent(sku)}`),
+  syncSkuConversions: (records) => api.post('/sku-conversions/sync', { records }),
+
   // Business Rules
   getRules: (params = {}) => {
     const qs = new URLSearchParams();

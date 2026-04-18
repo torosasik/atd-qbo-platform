@@ -295,6 +295,212 @@ function VendorMappingSection({ showToast }) {
 }
 
 // ---------------------------------------------------------------------------
+// SKU Conversion Section (embedded in Settings)
+// ---------------------------------------------------------------------------
+const NATURAL_STONE_MATERIALS = ['marble', 'travertine', 'dolomite', 'onyx', 'limestone', 'granite'];
+
+function parseShopifyCsv(text) {
+  // Simple CSV parser that handles quoted fields
+  const lines = text.split('\n');
+  if (lines.length < 2) return [];
+
+  const headerLine = lines[0];
+  const headers = parseCsvLine(headerLine);
+
+  const skuIdx = headers.findIndex((h) => h.trim().toLowerCase() === 'variant sku');
+  const titleIdx = headers.findIndex((h) => h.trim().toLowerCase() === 'title');
+  const vendorIdx = headers.findIndex((h) => h.trim().toLowerCase() === 'vendor');
+  const tagsIdx = headers.findIndex((h) => h.trim().toLowerCase() === 'tags');
+  const boxAreaIdx = headers.findIndex((h) => h.trim().toLowerCase().includes('box area'));
+  const tilesPerBoxIdx = headers.findIndex((h) => h.trim().toLowerCase().includes('tiles per box'));
+  const soldByIdx = headers.findIndex((h) => h.trim().toLowerCase().includes('sold by'));
+
+  if (skuIdx < 0) return [];
+
+  const records = [];
+  let lastTitle = '';
+  let lastVendor = '';
+  let lastTags = '';
+
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const cols = parseCsvLine(lines[i]);
+
+    // Carry forward title/vendor/tags from last non-empty row
+    if (titleIdx >= 0 && cols[titleIdx]?.trim()) lastTitle = cols[titleIdx].trim();
+    if (vendorIdx >= 0 && cols[vendorIdx]?.trim()) lastVendor = cols[vendorIdx].trim();
+    if (tagsIdx >= 0 && cols[tagsIdx]?.trim()) lastTags = cols[tagsIdx].trim();
+
+    const sku = cols[skuIdx]?.trim();
+    if (!sku) continue;
+
+    // Extract material from MATERIAL_xxx tag
+    let material = '';
+    let tileSize = '';
+    if (lastTags) {
+      const tags = lastTags.split(',').map((t) => t.trim());
+      for (const tag of tags) {
+        if (tag.startsWith('MATERIAL_')) {
+          material = tag.replace('MATERIAL_', '').replace(/_/g, ' ');
+        }
+        if (tag.startsWith('SIZE_')) {
+          tileSize = tag.replace('SIZE_', '').replace(/_/g, ' ');
+        }
+      }
+    }
+
+    const materialLower = material.toLowerCase();
+    const isNaturalStone = NATURAL_STONE_MATERIALS.some((m) => materialLower.includes(m)) || materialLower.includes('stone');
+
+    const boxArea = boxAreaIdx >= 0 ? parseFloat(cols[boxAreaIdx]) || 0 : 0;
+    const tilesPerBox = tilesPerBoxIdx >= 0 ? parseFloat(cols[tilesPerBoxIdx]) || 0 : 0;
+    const soldBy = soldByIdx >= 0 ? (cols[soldByIdx]?.trim() || '') : '';
+
+    records.push({
+      sku,
+      title: lastTitle,
+      vendor: lastVendor,
+      material,
+      sold_by: soldBy,
+      box_area_sqft: boxArea,
+      tiles_per_box: tilesPerBox,
+      tile_size: tileSize,
+      is_natural_stone: isNaturalStone,
+    });
+  }
+
+  return records;
+}
+
+function parseCsvLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+function SkuConversionSection({ showToast }) {
+  const [skuCount, setSkuCount] = useState(0);
+  const [skuLoading, setSkuLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
+
+  useEffect(() => {
+    loadCount();
+  }, []);
+
+  async function loadCount() {
+    setSkuLoading(true);
+    try {
+      const res = await api.getSkuConversionCount();
+      setSkuCount(res.data?.count || res.count || 0);
+    } catch {
+      // ignore
+    } finally {
+      setSkuLoading(false);
+    }
+  }
+
+  async function handleFileUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setSyncing(true);
+    setProgress({ current: 0, total: 0 });
+
+    try {
+      const text = await file.text();
+      const records = parseShopifyCsv(text);
+
+      if (records.length === 0) {
+        showToast('No valid SKU records found in CSV.', 'error');
+        setSyncing(false);
+        return;
+      }
+
+      // Batch in groups of 200
+      const batchSize = 200;
+      const totalBatches = Math.ceil(records.length / batchSize);
+      setProgress({ current: 0, total: records.length });
+
+      for (let i = 0; i < records.length; i += batchSize) {
+        const chunk = records.slice(i, i + batchSize);
+        await api.syncSkuConversions(chunk);
+        setProgress({ current: Math.min(i + batchSize, records.length), total: records.length });
+      }
+
+      showToast(`Synced ${records.length} SKU conversion records.`, 'success');
+      await loadCount();
+    } catch (err) {
+      showToast(err.message || 'Failed to sync SKU conversions.', 'error');
+    } finally {
+      setSyncing(false);
+      // Reset file input
+      e.target.value = '';
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm">
+      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h2 className="text-base font-semibold text-atd-dark">SKU Conversion Table</h2>
+      </div>
+      <div className="px-6 py-5 space-y-4">
+        <div className="flex items-center gap-4">
+          <p className="text-sm text-gray-600">
+            {skuLoading ? 'Loading...' : `${skuCount} SKUs in conversion table`}
+          </p>
+          <label className="flex items-center gap-2 bg-atd-blue hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-60">
+            <input
+              type="file"
+              accept=".csv"
+              onChange={handleFileUpload}
+              disabled={syncing}
+              className="hidden"
+            />
+            {syncing ? 'Syncing...' : 'Upload Shopify CSV'}
+          </label>
+        </div>
+        {syncing && progress.total > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm text-gray-500">
+              <span>Syncing SKU records...</span>
+              <span>{progress.current} / {progress.total}</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div
+                className="bg-atd-blue h-2 rounded-full transition-all"
+                style={{ width: `${Math.round((progress.current / progress.total) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
+        <p className="text-xs text-gray-400">
+          Upload a Shopify product export CSV. The system will extract SKU, material, box area, tiles per box, and natural stone classification for conversion rules.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 export default function Settings() {
@@ -1120,6 +1326,9 @@ export default function Settings() {
 
       {/* Vendor Mapping */}
       <VendorMappingSection showToast={showToast} />
+
+      {/* SKU Conversion Table */}
+      <SkuConversionSection showToast={showToast} />
 
       {/* Danger Zone */}
       <div className="bg-white rounded-xl shadow-sm px-6 py-5">

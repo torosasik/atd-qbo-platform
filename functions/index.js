@@ -24,6 +24,7 @@ const orderStatusRoutes = require('./api/order-status-routes');
 const rulesRoutes = require('./api/rules');
 const orderFulfillmentRoutes = require('./api/order-fulfillment-routes');
 const itemsRoutes = require('./api/items-routes');
+const skuConversionsRoutes = require('./api/sku-conversions');
 const { logAction } = require('./core/logger');
 
 // ---------------------------------------------------------------------------
@@ -69,6 +70,7 @@ apiRouter.use('/health', healthRoutes); // health
 apiRouter.use('/activity-log', activityLogRoutes);
 apiRouter.use('/order-statuses', orderStatusRoutes);
 apiRouter.use('/rules', rulesRoutes);
+apiRouter.use('/sku-conversions', skuConversionsRoutes);
 apiRouter.use('/order-fulfillment', orderFulfillmentRoutes);
 // Catch-all routes last (these were intercepting /auth/* before)
 apiRouter.use('/', cacheRoutes); // customers, vendors, items, accounts, open-invoices, /items/create

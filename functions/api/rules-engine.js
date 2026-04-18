@@ -7,6 +7,8 @@ const RULE_TYPES = {
   PRICING: 'PRICING',
   NAMING: 'NAMING',
   UNIT_CONVERSION: 'UNIT_CONVERSION',
+  NATURAL_STONE_CONVERSION: 'NATURAL_STONE_CONVERSION',
+  QUANTITY_THRESHOLD_DISCOUNT: 'QUANTITY_THRESHOLD_DISCOUNT',
 };
 
 function normalizeVendorName(vendorName) {
@@ -27,9 +29,23 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function applySingleRule(item, businessRule) {
+// Look up a SKU in the sku_conversions Firestore collection
+async function lookupSkuConversion(sku) {
+  if (!sku) return null;
+  const db = getFirestore();
+  const docId = String(sku).trim().replace(/\//g, '__');
+  try {
+    const doc = await db.collection('sku_conversions').doc(docId).get();
+    return doc.exists ? doc.data() : null;
+  } catch {
+    return null;
+  }
+}
+
+function applySingleRule(item, businessRule, skuConversion) {
   const next = { ...item };
   const payload = businessRule.rule || {};
+  const notes = next._ruleNotes || [];
 
   switch (businessRule.type) {
     case RULE_TYPES.SKU_MAPPING: {
@@ -63,16 +79,62 @@ function applySingleRule(item, businessRule) {
     }
 
     case RULE_TYPES.UNIT_CONVERSION: {
-      const atdUnit = String(payload.atd_unit || '').trim().toLowerCase();
-      const vendorUnit = String(payload.vendor_unit || '').trim();
-      const factor = toNumber(payload.conversion_factor, 0);
-      const currentUnit = String(next.unit || '').trim().toLowerCase();
-      if (atdUnit && vendorUnit && factor > 0 && currentUnit === atdUnit) {
+      // Enhanced: try SKU-level lookup first for non-natural-stone box conversions
+      if (skuConversion && !skuConversion.is_natural_stone && skuConversion.box_area_sqft > 0 && (skuConversion.sold_by || '').toLowerCase() === 'box') {
         const quantity = toNumber(next.quantity ?? next.qty, 0);
-        const convertedQty = quantity * factor;
+        const convertedQty = quantity * skuConversion.box_area_sqft;
         next.quantity = convertedQty;
         next.qty = convertedQty;
-        next.unit = vendorUnit;
+        next.unit = 'Sq Ft';
+        notes.push(`Converted from ${quantity} boxes (box area: ${skuConversion.box_area_sqft} sq ft/box)`);
+      } else {
+        // Fallback to manual conversion factor
+        const atdUnit = String(payload.atd_unit || '').trim().toLowerCase();
+        const vendorUnit = String(payload.vendor_unit || '').trim();
+        const factor = toNumber(payload.conversion_factor, 0);
+        const currentUnit = String(next.unit || '').trim().toLowerCase();
+        if (atdUnit && vendorUnit && factor > 0 && currentUnit === atdUnit) {
+          const quantity = toNumber(next.quantity ?? next.qty, 0);
+          const convertedQty = quantity * factor;
+          next.quantity = convertedQty;
+          next.qty = convertedQty;
+          next.unit = vendorUnit;
+        }
+      }
+      break;
+    }
+
+    case RULE_TYPES.NATURAL_STONE_CONVERSION: {
+      // Only applies if SKU is natural stone
+      if (skuConversion && skuConversion.is_natural_stone) {
+        const pieceSqft = toNumber(payload.piece_sqft, 0);
+        if (pieceSqft > 0) {
+          const quantity = toNumber(next.quantity ?? next.qty, 0);
+          const convertedQty = quantity * pieceSqft;
+          next.quantity = convertedQty;
+          next.qty = convertedQty;
+          next.unit = 'Sq Ft';
+          notes.push(`Natural stone: converted ${quantity} pieces at ${pieceSqft} sq ft/piece`);
+        }
+      }
+      break;
+    }
+
+    case RULE_TYPES.QUANTITY_THRESHOLD_DISCOUNT: {
+      const minQty = toNumber(payload.min_quantity, 0);
+      const discountPercent = toNumber(payload.discount_percent, 0);
+      const ruleUnit = payload.unit ? String(payload.unit).trim().toLowerCase() : '';
+      const currentUnit = String(next.unit || '').trim().toLowerCase();
+      const quantity = toNumber(next.quantity ?? next.qty, 0);
+
+      if (minQty > 0 && discountPercent > 0 && quantity >= minQty) {
+        // If rule specifies a unit, only apply if unit matches
+        if (!ruleUnit || currentUnit === ruleUnit) {
+          const unitPrice = toNumber(next.unitPrice, 0);
+          const discounted = unitPrice * (1 - discountPercent / 100);
+          next.unitPrice = Math.round(discounted * 100) / 100;
+          notes.push(`Quantity discount ${discountPercent}% applied (qty: ${quantity})`);
+        }
       }
       break;
     }
@@ -81,6 +143,7 @@ function applySingleRule(item, businessRule) {
       break;
   }
 
+  next._ruleNotes = notes;
   return next;
 }
 
@@ -107,17 +170,41 @@ async function applyRules(orderItems, vendorName) {
     return items;
   }
 
-  return items.map((item) => {
-    let transformed = { ...item };
-    for (const businessRule of rules) {
-      transformed = applySingleRule(transformed, businessRule);
+  // Check if any rules need SKU lookups
+  const needsSkuLookup = rules.some((r) =>
+    r.type === RULE_TYPES.UNIT_CONVERSION ||
+    r.type === RULE_TYPES.NATURAL_STONE_CONVERSION
+  );
+
+  const results = [];
+  for (const item of items) {
+    let transformed = { ...item, _ruleNotes: [] };
+
+    // Look up SKU conversion data if needed
+    let skuConversion = null;
+    if (needsSkuLookup) {
+      const sku = item.sku || item.itemSku || '';
+      skuConversion = await lookupSkuConversion(sku);
     }
-    return transformed;
-  });
+
+    for (const businessRule of rules) {
+      transformed = applySingleRule(transformed, businessRule, skuConversion);
+    }
+
+    // Flatten notes into a single note string
+    if (transformed._ruleNotes && transformed._ruleNotes.length > 0) {
+      transformed.note = transformed._ruleNotes.join('; ');
+    }
+    delete transformed._ruleNotes;
+
+    results.push(transformed);
+  }
+
+  return results;
 }
 
 module.exports = {
   RULE_TYPES,
   applyRules,
+  lookupSkuConversion,
 };
-

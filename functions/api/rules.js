@@ -8,7 +8,7 @@ const { logActivity } = require('./activity-logger');
 
 const router = express.Router();
 
-const RULE_TYPES = ['SKU_MAPPING', 'PRICING', 'NAMING', 'UNIT_CONVERSION'];
+const RULE_TYPES = ['SKU_MAPPING', 'PRICING', 'NAMING', 'UNIT_CONVERSION', 'NATURAL_STONE_CONVERSION', 'QUANTITY_THRESHOLD_DISCOUNT'];
 
 const skuMappingSchema = Joi.object({
   atd_sku: Joi.string().trim().min(1).required(),
@@ -32,6 +32,16 @@ const unitConversionSchema = Joi.object({
   conversion_factor: Joi.number().positive().required(),
 });
 
+const naturalStoneConversionSchema = Joi.object({
+  piece_sqft: Joi.number().positive().required(),
+});
+
+const quantityThresholdDiscountSchema = Joi.object({
+  min_quantity: Joi.number().positive().required(),
+  discount_percent: Joi.number().min(0).max(100).required(),
+  unit: Joi.string().trim().allow('', null).optional(),
+});
+
 const ruleCreateSchema = Joi.object({
   type: Joi.string().valid(...RULE_TYPES).required(),
   vendor: Joi.string().trim().min(1).required(),
@@ -42,6 +52,8 @@ const ruleCreateSchema = Joi.object({
       { is: 'PRICING', then: pricingSchema.required() },
       { is: 'NAMING', then: namingSchema.required() },
       { is: 'UNIT_CONVERSION', then: unitConversionSchema.required() },
+      { is: 'NATURAL_STONE_CONVERSION', then: naturalStoneConversionSchema.required() },
+      { is: 'QUANTITY_THRESHOLD_DISCOUNT', then: quantityThresholdDiscountSchema.required() },
     ],
   }),
 });

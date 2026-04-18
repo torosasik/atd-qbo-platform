@@ -1521,7 +1521,10 @@ function DraftsTab() {
                                   <tr key={idx} className="border-t border-gray-100">
                                     <td className="py-1.5 pr-4 text-gray-400">{idx + 1}</td>
                                     <td className="py-1.5 pr-4 text-gray-500">{line.sku || '-'}</td>
-                                    <td className="py-1.5 pr-4 text-gray-700">{line.description || line.itemName || '-'}</td>
+                                    <td className="py-1.5 pr-4 text-gray-700">
+                                      {line.description || line.itemName || '-'}
+                                      {line.note && <div className="text-xs text-gray-400 italic mt-0.5">{line.note}</div>}
+                                    </td>
                                     <td className="py-1.5 pr-4">{line.qty || line.quantity || '-'}</td>
                                     <td className="py-1.5 pr-4">{line.unit || '-'}</td>
                                     <td className="py-1.5">{formatCurrency(line.unitPrice || 0)}</td>

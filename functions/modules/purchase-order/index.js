@@ -202,6 +202,11 @@ function buildPayload(data, matchedVendor) {
       description = `${description} - ${line.sku}`;
     }
 
+    // Append rule-generated notes to description (visible on PO in QBO)
+    if (line.note && typeof line.note === 'string' && line.note.trim() !== '') {
+      description = `${description} | ${line.note}`;
+    }
+
     return {
       DetailType: 'ItemBasedExpenseLineDetail',
       Amount: amount,

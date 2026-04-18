@@ -4,7 +4,7 @@ import { api, humanizeError } from '../utils/api';
 import Toggle from '../components/shared/Toggle';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 
-const RULE_TYPES = ['SKU_MAPPING', 'PRICING', 'NAMING', 'UNIT_CONVERSION'];
+const RULE_TYPES = ['SKU_MAPPING', 'PRICING', 'NAMING', 'UNIT_CONVERSION', 'NATURAL_STONE_CONVERSION', 'QUANTITY_THRESHOLD_DISCOUNT'];
 
 function typeBadgeClass(type) {
   const map = {
@@ -12,6 +12,8 @@ function typeBadgeClass(type) {
     PRICING: 'bg-emerald-100 text-emerald-700',
     NAMING: 'bg-purple-100 text-purple-700',
     UNIT_CONVERSION: 'bg-amber-100 text-amber-700',
+    NATURAL_STONE_CONVERSION: 'bg-stone-100 text-stone-700',
+    QUANTITY_THRESHOLD_DISCOUNT: 'bg-rose-100 text-rose-700',
   };
   return map[type] || 'bg-gray-100 text-gray-600';
 }
@@ -20,6 +22,8 @@ function initialRuleByType(type) {
   if (type === 'SKU_MAPPING') return { atd_sku: '', vendor_sku: '' };
   if (type === 'PRICING') return { discount_percent: 0, start_date: '', end_date: '' };
   if (type === 'NAMING') return { atd_name: '', vendor_name: '' };
+  if (type === 'NATURAL_STONE_CONVERSION') return { piece_sqft: 2.0 };
+  if (type === 'QUANTITY_THRESHOLD_DISCOUNT') return { min_quantity: 100, discount_percent: 0, unit: '' };
   return { atd_unit: '', vendor_unit: '', conversion_factor: 1 };
 }
 
@@ -28,6 +32,8 @@ function ruleSummary(type, rule) {
   if (type === 'SKU_MAPPING') return `${rule.atd_sku || '—'} → ${rule.vendor_sku || '—'}`;
   if (type === 'PRICING') return `${rule.discount_percent ?? 0}% (${rule.start_date || 'now'} to ${rule.end_date || 'open'})`;
   if (type === 'NAMING') return `${rule.atd_name || '—'} → ${rule.vendor_name || '—'}`;
+  if (type === 'NATURAL_STONE_CONVERSION') return `${rule.piece_sqft ?? 0} sq ft/piece`;
+  if (type === 'QUANTITY_THRESHOLD_DISCOUNT') return `${rule.discount_percent ?? 0}% off when qty >= ${rule.min_quantity ?? 0}${rule.unit ? ` (${rule.unit})` : ''}`;
   return `${rule.atd_unit || '—'} → ${rule.vendor_unit || '—'} x${rule.conversion_factor ?? 1}`;
 }
 
@@ -60,6 +66,39 @@ function RuleFields({ type, value, onChange }) {
     );
   }
 
+  if (type === 'NATURAL_STONE_CONVERSION') {
+    return (
+      <div className="space-y-2">
+        <div className="grid grid-cols-1 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Sq Ft per Piece</label>
+            <input type="number" min="0" step="0.01" className="border rounded-lg px-3 py-2 text-sm w-full" placeholder="e.g. 2.0" value={value.piece_sqft ?? 2.0} onChange={(e) => onChange({ ...value, piece_sqft: Number(e.target.value) })} />
+            <p className="text-xs text-gray-400 mt-1">e.g. 2.0 for 12x24, 4.0 for 24x24</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === 'QUANTITY_THRESHOLD_DISCOUNT') {
+    return (
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Minimum Quantity</label>
+          <input type="number" min="0" className="border rounded-lg px-3 py-2 text-sm w-full" placeholder="100" value={value.min_quantity ?? 0} onChange={(e) => onChange({ ...value, min_quantity: Number(e.target.value) })} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Discount %</label>
+          <input type="number" min="0" max="100" className="border rounded-lg px-3 py-2 text-sm w-full" placeholder="10" value={value.discount_percent ?? 0} onChange={(e) => onChange({ ...value, discount_percent: Number(e.target.value) })} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Unit (optional)</label>
+          <input className="border rounded-lg px-3 py-2 text-sm w-full" placeholder="e.g. Sq Ft" value={value.unit || ''} onChange={(e) => onChange({ ...value, unit: e.target.value })} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-3 gap-3">
       <input className="border rounded-lg px-3 py-2 text-sm" placeholder="ATD Unit" value={value.atd_unit || ''} onChange={(e) => onChange({ ...value, atd_unit: e.target.value })} />
@@ -87,7 +126,7 @@ function AIRuleModal({ open, onClose, onGenerated }) {
     setGenerating(true);
     setAiError('');
     try {
-      const instructions = 'You are a business rules assistant for a tile company. Parse the following description into a JSON rule object with this exact shape: { type: one of SKU_MAPPING|PRICING|NAMING|UNIT_CONVERSION, vendor: string, active: true, rule: object }. For SKU_MAPPING rule contains { atd_sku, vendor_sku }. For PRICING rule contains { discount_percent, start_date, end_date }. For NAMING rule contains { atd_name, vendor_name }. For UNIT_CONVERSION rule contains { atd_unit, vendor_unit, conversion_factor }. Return only valid JSON, no explanation.';
+      const instructions = 'You are a business rules assistant for a tile company. Parse the following description into a JSON rule object with this exact shape: { type: one of SKU_MAPPING|PRICING|NAMING|UNIT_CONVERSION|NATURAL_STONE_CONVERSION|QUANTITY_THRESHOLD_DISCOUNT, vendor: string, active: true, rule: object }. For SKU_MAPPING rule contains { atd_sku, vendor_sku }. For PRICING rule contains { discount_percent, start_date, end_date }. For NAMING rule contains { atd_name, vendor_name }. For UNIT_CONVERSION rule contains { atd_unit, vendor_unit, conversion_factor }. For NATURAL_STONE_CONVERSION rule contains { piece_sqft } (sq ft per piece, e.g. 2.0 for 12x24 tiles). For QUANTITY_THRESHOLD_DISCOUNT rule contains { min_quantity, discount_percent, unit (optional) }. Return only valid JSON, no explanation.';
       const combinedMessage = `${instructions}\n\nUser description: ${description.trim()}`;
       const res = await api.post('/ai/chat', {
         message: combinedMessage,
