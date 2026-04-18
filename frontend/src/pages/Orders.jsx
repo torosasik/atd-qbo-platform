@@ -567,6 +567,7 @@ export default function Orders() {
   const qtyHeader = useMemo(() => findHeaderKey(headers, ['Qty', 'Quantity']), [headers]);
   const skuHeader = useMemo(() => findHeaderKey(headers, ['SKU']), [headers]);
   const vendorHeader = useMemo(() => findHeaderKey(headers, ['Vendor', 'Vendor Name', 'Supplier']), [headers]);
+  const sheetStatusHeader = useMemo(() => findHeaderKey(headers, ['Status']), [headers]);
 
   const mandatoryResolved = useMemo(() => {
     return [orderNumHeader, itemNameHeader, qtyHeader, skuHeader].filter(Boolean);
@@ -692,8 +693,20 @@ export default function Orders() {
     let result = rows;
     if (!showFulfilled) {
       result = result.filter((row) => {
+        // Check app-internal status (Firestore)
         const key = buildStatusKey(orderNumHeader ? row[orderNumHeader] : '', lineItemHeader ? row[lineItemHeader] : '');
-        return (statuses[key] || 'Pending') !== 'Fulfilled';
+        const internalStatus = statuses[key] || 'Pending';
+        if (internalStatus === 'Fulfilled') return false;
+
+        // Check sheet Status column for fulfilled/cancelled rows
+        if (sheetStatusHeader) {
+          const sheetStatus = (row[sheetStatusHeader] || '').toString().toUpperCase().trim();
+          if (sheetStatus === 'FULFILLED' || sheetStatus === 'CANCELLED' || sheetStatus === 'CANCELED') {
+            return false;
+          }
+        }
+
+        return true;
       });
     }
     if (sortKey) {
@@ -705,7 +718,7 @@ export default function Orders() {
       });
     }
     return result;
-  }, [rows, statuses, showFulfilled, sortKey, sortDir, orderNumHeader, lineItemHeader]);
+  }, [rows, statuses, showFulfilled, sortKey, sortDir, orderNumHeader, lineItemHeader, sheetStatusHeader]);
 
   const searchableRows = useMemo(() => {
     return baseRows.map((row, __index) => ({
@@ -902,11 +915,18 @@ export default function Orders() {
         orderNumHeader ? row[orderNumHeader] : '',
         lineItemHeader ? row[lineItemHeader] : ''
       );
-      const s = statuses[key] || 'Pending';
+      let s = statuses[key] || 'Pending';
+      // If the app-internal status is still default (Pending), check the sheet Status column
+      if (s === 'Pending' && sheetStatusHeader) {
+        const sheetStatus = (row[sheetStatusHeader] || '').toString().toUpperCase().trim();
+        if (sheetStatus === 'FULFILLED' || sheetStatus === 'CANCELLED' || sheetStatus === 'CANCELED') {
+          s = 'Fulfilled';
+        }
+      }
       if (counts[s] !== undefined) counts[s]++;
     });
     return counts;
-  }, [rows, statuses, orderNumHeader, lineItemHeader]);
+  }, [rows, statuses, orderNumHeader, lineItemHeader, sheetStatusHeader]);
 
   if (loading) {
     return (
