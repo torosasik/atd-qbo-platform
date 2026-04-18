@@ -4,6 +4,7 @@ import AppLayout from './components/shared/AppLayout';
 import LoadingSpinner from './components/shared/LoadingSpinner';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
+import NotFound from './pages/NotFound';
 
 // Lazy load page components for better performance
 const NewDashboard = lazy(() => import('./pages/NewDashboard'));
@@ -98,8 +99,8 @@ export default function App() {
               <Route path="/activity-log" element={<ActivityLog />} />
               <Route path="/rules" element={<Rules />} />
               <Route path="/help" element={<Help />} />
-              {/* Catch-all: redirect unknown paths to Dashboard */}
-              <Route path="*" element={<Navigate to="/" replace />} />
+              {/* 404 page */}
+              <Route path="*" element={<ProtectedRoute><ErrorBoundary><NotFound /></ErrorBoundary></ProtectedRoute>} />
             </Route>
           </Routes>
         </Suspense>
