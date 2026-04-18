@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { getAuth, signOut } from 'firebase/auth';
 import useFeatures from '../../utils/useFeatures';
 import { api } from '../../utils/api';
 
@@ -234,6 +235,58 @@ function SidebarContent({ onClose, features = {} }) {
 export default function AppLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { features } = useFeatures();
+  const navigate = useNavigate();
+  
+  // Session inactivity timeout — 8 hours = 28,800,000 milliseconds
+  const inactivityTimeout = useRef(null);
+  const INACTIVITY_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8 hours
+  
+  // Reset the inactivity timer
+  const resetInactivityTimer = useCallback(() => {
+    if (inactivityTimeout.current) {
+      clearTimeout(inactivityTimeout.current);
+    }
+    
+    inactivityTimeout.current = setTimeout(() => {
+      const auth = getAuth();
+      signOut(auth)
+        .then(() => {
+          console.log('Session timed out due to inactivity');
+          navigate('/login');
+        })
+        .catch((error) => {
+          console.error('Error signing out on inactivity timeout:', error);
+          navigate('/login');
+        });
+    }, INACTIVITY_TIMEOUT_MS);
+  }, [navigate]);
+  
+  // Initialize and track inactivity
+  useEffect(() => {
+    // Reset timer on initial mount
+    resetInactivityTimer();
+    
+    // Event listener to reset timer on user activity
+    const resetTimerOnActivity = () => {
+      resetInactivityTimer();
+    };
+    
+    // Listen for mouse movements and keyboard events
+    const events = ['mousemove', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown', 'scroll'];
+    events.forEach(event => {
+      window.addEventListener(event, resetTimerOnActivity, { passive: true });
+    });
+    
+    // Cleanup event listeners and timer
+    return () => {
+      events.forEach(event => {
+        window.removeEventListener(event, resetTimerOnActivity);
+      });
+      if (inactivityTimeout.current) {
+        clearTimeout(inactivityTimeout.current);
+      }
+    };
+  }, [resetInactivityTimer]);
 
   // Global health check — lightweight poll
   const [healthStatus, setHealthStatus] = useState(null);
