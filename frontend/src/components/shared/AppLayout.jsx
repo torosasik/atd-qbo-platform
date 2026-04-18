@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { getAuth, signOut } from 'firebase/auth';
 import useFeatures from '../../utils/useFeatures';
 import { api } from '../../utils/api';
+import { logActivity } from '../../utils/activityLogger';
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'v0.1.0';
 import {
@@ -252,6 +253,7 @@ export default function AppLayout({ children }) {
       signOut(auth)
         .then(() => {
           console.log('Session timed out due to inactivity');
+          logActivity('USER_LOGOUT', 'User session timed out due to inactivity');
           navigate('/login');
         })
         .catch((error) => {

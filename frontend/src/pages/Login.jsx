@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
+import { logActivity } from '../utils/activityLogger';
 
 const ATD_BLUE = '#0462AC';
 
@@ -12,7 +13,10 @@ export default function Login() {
     setLoading(true);
     setError('');
     try {
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      // Log the successful login event
+      logActivity('USER_LOGIN', `User logged in: ${result.user.email}`);
+      
       // onAuthStateChanged will redirect via ProtectedRoute
     } catch (err) {
       const msg = err?.message || 'Sign-in failed. Please try again.';

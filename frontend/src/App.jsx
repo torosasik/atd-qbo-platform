@@ -5,6 +5,8 @@ import LoadingSpinner from './components/shared/LoadingSpinner';
 import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
+import { getFirestore, collection, addDoc } from 'firebase/firestore';
+import { auth } from './firebase.js';
 
 // Lazy load page components for better performance
 const NewDashboard = lazy(() => import('./pages/NewDashboard'));
@@ -46,6 +48,30 @@ class ErrorBoundary extends React.Component {
   componentDidCatch(error, errorInfo) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error('Route error:', errorMessage, errorInfo);
+    
+    // Log the error to Firestore with try/catch to avoid crashing the boundary itself
+    const logErrorToFirestore = async () => {
+      try {
+        const db = getFirestore();
+        const user = auth.currentUser;
+        const errorRef = collection(db, 'error_logs');
+        
+        await addDoc(errorRef, {
+          message: errorMessage,
+          stack: error.stack || 'No stack trace available',
+          timestamp: new Date().toISOString(),
+          url: window.location.href,
+          userId: user?.uid || 'anonymous',
+          userEmail: user?.email || 'anonymous@atd.com'
+        });
+      } catch (logError) {
+        // If logging fails, we just silently catch - we don't want to crash the boundary itself
+        console.warn('Failed to log error to Firestore:', logError);
+      }
+    };
+
+    // Trigger the log asynchronously
+    logErrorToFirestore();
   }
 
   render() {

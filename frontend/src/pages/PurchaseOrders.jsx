@@ -16,6 +16,7 @@ import { api } from '../utils/api';
 import { logActivity } from '../utils/activityLogger';
 import { getCached, setCache, invalidateAll } from '../utils/dataCache';
 import { formatCurrency, formatDateTime, generateId, getTodayDate } from '../utils/helpers';
+import ConfirmModal from '../components/shared/ConfirmModal';
 import Toggle from '../components/shared/Toggle';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 
@@ -637,7 +638,13 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, itemsLoading, v
   const [result, setResult] = useState(null);
   const [createItemModalOpen, setCreateItemModalOpen] = useState(false);
   const [createItemSearchTerm, setCreateItemSearchTerm] = useState('');
-  const [showAutoApproveConfirm, setShowAutoApproveConfirm] = useState(false);
+  // State for confirmation modal
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    onConfirm: null,
+    title: '',
+    message: ''
+  });
 
   function resetForm() {
     setForm({
@@ -662,9 +669,16 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, itemsLoading, v
   }
 
   function handleClearForm() {
-    if (!window.confirm('Clear this form and reset all fields to defaults?')) return;
-    resetForm();
-    setResult(null);
+    setConfirmModal({
+      isOpen: true,
+      title: 'Clear Form',
+      message: 'Are you sure you want to clear this form and reset all fields to defaults?',
+      onConfirm: () => {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        resetForm();
+        setResult(null);
+      }
+    });
   }
 
   const filteredVendors = useMemo(() => {
@@ -1257,18 +1271,27 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, itemsLoading, v
             Clear Form
           </button>
         </div>
-      </div>
+        </div>
 
-      {/* Create New Item Modal */}
-      <CreateNewItemModal
-        isOpen={createItemModalOpen}
-        onClose={() => setCreateItemModalOpen(false)}
-        onSuccess={handleItemCreated}
-        initialName={createItemSearchTerm}
-      />
+        {/* Create New Item Modal */}
+        <CreateNewItemModal
+          isOpen={createItemModalOpen}
+          onClose={() => setCreateItemModalOpen(false)}
+          onSuccess={handleItemCreated}
+          initialName={createItemSearchTerm}
+        />
 
-      {/* Auto Approve Confirmation Modal */}
-      {showAutoApproveConfirm && (
+        {/* Confirm Modal */}
+        <ConfirmModal
+          isOpen={confirmModal.isOpen}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          onConfirm={() => confirmModal.onConfirm()}
+          onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        />
+
+        {/* Auto Approve Confirmation Modal */}
+        {showAutoApproveConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md mx-4 shadow-xl">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Confirm Auto-Approve</h3>
@@ -1311,6 +1334,14 @@ function DraftsTab() {
   const [actionResult, setActionResult] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+
+  // State for confirmation modal within DraftsTab component
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    onConfirm: null,
+    title: '',
+    message: ''
+  });
 
   // Derived pagination values
   const totalItems = drafts.length;
@@ -1361,18 +1392,25 @@ function DraftsTab() {
   }
 
   async function handleReject(draftId) {
-    if (!window.confirm('Reject this draft? It will be removed and not sent to QuickBooks.')) return;
-    setRejectingId(draftId);
-    setActionResult(null);
-    try {
-      await api.rejectDraft(draftId);
-      setActionResult({ type: 'success', message: 'Draft rejected and removed.' });
-      await fetchDrafts();
-    } catch (err) {
-      setActionResult({ type: 'error', message: err.message || 'Reject failed.' });
-    } finally {
-      setRejectingId(null);
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Reject Draft',
+      message: 'Reject this draft? It will be removed and not sent to QuickBooks.',
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        setRejectingId(draftId);
+        setActionResult(null);
+        try {
+          await api.rejectDraft(draftId);
+          setActionResult({ type: 'success', message: 'Draft rejected and removed.' });
+          await fetchDrafts();
+        } catch (err) {
+          setActionResult({ type: 'error', message: err.message || 'Reject failed.' });
+        } finally {
+          setRejectingId(null);
+        }
+      }
+    });
   }
 
   function calcEstTotal(draft) {

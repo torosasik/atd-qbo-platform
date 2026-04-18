@@ -4,6 +4,7 @@ import { api, humanizeError } from '../utils/api';
 import { logActivity } from '../utils/activityLogger';
 import Toggle from '../components/shared/Toggle';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
+import ConfirmModal from '../components/shared/ConfirmModal';
 
 const RULE_TYPES = ['SKU_MAPPING', 'PRICING', 'NAMING', 'UNIT_CONVERSION', 'NATURAL_STONE_CONVERSION', 'QUANTITY_THRESHOLD_DISCOUNT'];
 
@@ -261,6 +262,12 @@ export default function Rules() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState(null);
   const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    onConfirm: null,
+    title: '',
+    message: ''
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -311,15 +318,22 @@ export default function Rules() {
   }
 
   async function deleteRule(id) {
-    if (!window.confirm('Delete this rule? This cannot be undone.')) return;
-    try {
-      const rule = rules.find((r) => r.id === id);
-      await api.deleteRule(id);
-      logActivity('RULE_DELETED', `Rule deleted: ${rule?.name || id}`);
-      await load();
-    } catch (err) {
-      setError(humanizeError(err));
-    }
+    const rule = rules.find((r) => r.id === id);
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Rule',
+      message: 'Are you sure you want to delete this rule? This cannot be undone.',
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        try {
+          await api.deleteRule(id);
+          logActivity('RULE_DELETED', `Rule deleted: ${rule?.name || id}`);
+          await load();
+        } catch (err) {
+          setError(humanizeError(err));
+        }
+      }
+    });
   }
 
   return (
@@ -388,6 +402,13 @@ export default function Rules() {
           setEditingRule(parsed);
           setModalOpen(true);
         }}
+      />
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={() => confirmModal.onConfirm()}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
       />
     </div>
   );
