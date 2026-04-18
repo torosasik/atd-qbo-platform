@@ -517,6 +517,7 @@ export default function Settings() {
   const [resetConfirm, setResetConfirm] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [aiTest, setAiTest] = useState({ status: null, loading: false, message: '' });
+  const [authRealmId, setAuthRealmId] = useState(null);
 
   const isDirty = savedSettings !== null && JSON.stringify(settings) !== JSON.stringify(savedSettings);
 
@@ -538,35 +539,45 @@ export default function Settings() {
     async function load() {
       setPageLoading(true);
       try {
-        const res = await api.getSettings();
-        const data = res.settings ?? res.data?.settings ?? res.data ?? res;
-        const merged = deepMerge(DEFAULT_SETTINGS, data);
-        merged.ai = normalizeAiSettings(merged.ai || {});
-        setSettings(merged);
-        setSavedSettings(JSON.parse(JSON.stringify(merged)));
-        localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(merged));
-      } catch (err) {
-        let fallbackSettings = DEFAULT_SETTINGS;
-        let usedCache = false;
-        try {
-          const cached = localStorage.getItem(SETTINGS_CACHE_KEY);
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            fallbackSettings = deepMerge(DEFAULT_SETTINGS, parsed);
-            fallbackSettings.ai = normalizeAiSettings(fallbackSettings.ai || {});
-            usedCache = true;
+        const [settingsRes, authRes] = await Promise.allSettled([
+          api.getSettings(),
+          api.getAuthStatus(),
+        ]);
+
+        // Settings
+        if (settingsRes.status === 'fulfilled') {
+          const data = settingsRes.value.settings ?? settingsRes.value.data?.settings ?? settingsRes.value.data ?? settingsRes.value;
+          const merged = deepMerge(DEFAULT_SETTINGS, data);
+          merged.ai = normalizeAiSettings(merged.ai || {});
+          setSettings(merged);
+          setSavedSettings(JSON.parse(JSON.stringify(merged)));
+          localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(merged));
+        } else {
+          let fallbackSettings = DEFAULT_SETTINGS;
+          let usedCache = false;
+          try {
+            const cached = localStorage.getItem(SETTINGS_CACHE_KEY);
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              fallbackSettings = deepMerge(DEFAULT_SETTINGS, parsed);
+              fallbackSettings.ai = normalizeAiSettings(fallbackSettings.ai || {});
+              usedCache = true;
+            }
+          } catch {
+            fallbackSettings = DEFAULT_SETTINGS;
           }
-        } catch {
-          fallbackSettings = DEFAULT_SETTINGS;
+          setSettings(fallbackSettings);
+          setSavedSettings(JSON.parse(JSON.stringify(fallbackSettings)));
+          setLoadError(settingsRes.reason?.message || 'Could not load saved settings from server.');
         }
 
-        setSettings(fallbackSettings);
-        setSavedSettings(JSON.parse(JSON.stringify(fallbackSettings)));
-        setLoadError(
-          usedCache
-            ? 'Could not load saved settings from server. Showing locally cached values.'
-            : (err.message || 'Could not load saved settings from server. Showing defaults.')
-        );
+        // Auth status — pull realmId from the same source as QBO Connect
+        if (authRes.status === 'fulfilled') {
+          const authData = authRes.value.data ?? authRes.value;
+          setAuthRealmId(authData?.realmId ?? null);
+        }
+      } catch (err) {
+        setLoadError(err.message || 'Could not load settings.');
       } finally {
         setPageLoading(false);
       }
@@ -1006,7 +1017,7 @@ export default function Settings() {
           tooltip="Your QuickBooks company ID, assigned automatically when you connect via OAuth. Read-only."
         >
           <TextInput
-            value={qbo.realmId || '(not connected)'}
+            value={authRealmId || '(not connected)'}
             readOnly
           />
         </FieldRow>
@@ -1338,9 +1349,10 @@ export default function Settings() {
         </p>
         <button
           onClick={() => setResetConfirm(true)}
-          className="flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+          disabled={resetting}
+          className="flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          <RotateCcw className="h-4 w-4" />
+          {resetting ? <LoadingSpinner size="sm" color="red" /> : <RotateCcw className="h-4 w-4" />}
           Reset to Defaults
         </button>
       </div>

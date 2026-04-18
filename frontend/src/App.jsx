@@ -2,6 +2,8 @@ import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import AppLayout from './components/shared/AppLayout';
 import LoadingSpinner from './components/shared/LoadingSpinner';
+import ProtectedRoute from './components/ProtectedRoute';
+import Login from './pages/Login';
 
 // Lazy load page components for better performance
 const NewDashboard = lazy(() => import('./pages/NewDashboard'));
@@ -77,8 +79,10 @@ export default function App() {
       <ErrorBoundary>
         <Suspense fallback={<PageLoader />}>
           <Routes>
-            {/* AppLayout wraps all routes that should show the sidebar */}
-            <Route element={<AppLayout />}>
+            {/* Public route */}
+            <Route path="/login" element={<Login />} />
+            {/* Protected routes wrapped in AppLayout (sidebar) */}
+            <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route path="/" element={<NewDashboard />} />
               <Route path="/orders" element={<Orders />} />
               <Route path="/purchase-orders" element={<PurchaseOrders />} />

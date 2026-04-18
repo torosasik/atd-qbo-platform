@@ -60,11 +60,13 @@ function StatCard({ label, value, loading, highlight = false }) {
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [health, setHealth] = useState(null);
+  const [healthChecking, setHealthChecking] = useState(true);
   const [stats, setStats] = useState({ openOrders: 0, todayCreated: 0, drafts: 0, failed: 0 });
   const [activities, setActivities] = useState([]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setHealthChecking(true);
     try {
       const [healthRes, statsRes, ordersRes, activityRes] = await Promise.allSettled([
         api.getHealth(),
@@ -117,6 +119,7 @@ export default function Dashboard() {
       // Errors are handled per-request above
     } finally {
       setLoading(false);
+      setHealthChecking(false);
     }
   }, []);
 
@@ -134,6 +137,7 @@ export default function Dashboard() {
   const aiBothUnconfigured =
     health?.services?.claude_api?.status === 'not_configured' &&
     health?.services?.ollama?.status === 'not_configured';
+  const healthFailed = healthChecking ? false : !qboConnected && !sheetsConnected;
 
   return (
     <div className="h-full flex flex-col">
@@ -157,18 +161,18 @@ export default function Dashboard() {
           <div className="flex flex-wrap gap-3">
             <StatusPill
               label="QuickBooks"
-              status={qboConnected ? 'Connected' : 'Disconnected'}
-              color={qboConnected ? 'green' : 'red'}
+              status={healthChecking ? 'Checking…' : qboConnected ? 'Connected' : 'Disconnected'}
+              color={healthChecking ? 'gray' : qboConnected ? 'green' : 'red'}
             />
             <StatusPill
               label="Google Sheets"
-              status={sheetsConnected ? 'Connected' : 'Not configured'}
-              color={sheetsConnected ? 'green' : 'red'}
+              status={healthChecking ? 'Checking…' : sheetsConnected ? 'Connected' : 'Not configured'}
+              color={healthChecking ? 'gray' : sheetsConnected ? 'green' : 'red'}
             />
             <StatusPill
               label="AI"
-              status={aiActive ? 'Active' : aiBothUnconfigured ? 'Off' : 'Unavailable'}
-              color={aiActive ? 'green' : 'gray'}
+              status={healthChecking ? 'Checking…' : aiActive ? 'Active' : aiBothUnconfigured ? 'Off' : 'Unavailable'}
+              color={healthChecking ? 'gray' : aiActive ? 'green' : 'gray'}
             />
           </div>
 

@@ -23,13 +23,17 @@ export function formatCurrency(value) {
 
 /**
  * Format a timestamp to a human-readable date/time string.
- * @param {string|number|Date} timestamp - The timestamp to format
- * @returns {string} Formatted date/time string
+ * Handles null, undefined, Firebase Timestamp objects, and invalid values.
+ * Returns a dash for any value that cannot be parsed.
+ * @param {string|number|Date|object} timestamp - The timestamp to format
+ * @returns {string} Formatted date/time string or dash
  */
 export function formatDateTime(timestamp) {
   if (!timestamp) return '-';
   try {
-    const date = new Date(timestamp);
+    // Handle Firebase Timestamp objects (they have a toDate method)
+    const date = typeof timestamp?.toDate === 'function' ? timestamp.toDate() : new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return '-';
     return date.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -37,7 +41,7 @@ export function formatDateTime(timestamp) {
       minute: '2-digit',
     });
   } catch {
-    return String(timestamp);
+    return '-';
   }
 }
 

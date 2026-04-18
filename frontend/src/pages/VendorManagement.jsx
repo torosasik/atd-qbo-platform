@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { RefreshCw, Save, Search, AlertCircle, Link2, Unplug, AlertTriangle } from 'lucide-react';
 import { api } from '../utils/api';
+import { logActivity } from '../utils/activityLogger';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import Toast from '../components/shared/Toast';
 import Toggle from '../components/shared/Toggle';
@@ -170,6 +171,9 @@ export default function VendorManagement() {
   }
 
   function toggleActive(index) {
+    const vendor = vendors[index];
+    const action = !vendor.active ? 'activated' : 'deactivated';
+    logActivity('VENDOR_TOGGLED', `Vendor ${vendor.name || vendor.vendor_name} ${action}`);
     setVendors((prev) => {
       const next = [...prev];
       next[index] = { ...next[index], active: !next[index].active };

@@ -117,7 +117,12 @@ function AssistantMessage({ msg, onRetry, prevUserContent }) {
           {msg.source && <SourceBadge source={msg.source} />}
           {msg.confidence != null && (
             <span className="text-xs text-gray-400">
-              Confidence: {Math.round(msg.confidence * 100)}%
+              Confidence: {(() => {
+                const raw = msg.confidence;
+                // Guard against absurd values (already multiplied ×100 twice = 9500)
+                const val = raw > 100 ? raw / 100 : raw > 1 ? raw : raw * 100;
+                return `${Number.isFinite(val) ? val.toFixed(1) : '–'}%`;
+              })()}
             </span>
           )}
           <span className="text-xs text-gray-400">{formatTime(msg.timestamp)}</span>
@@ -190,17 +195,25 @@ export default function AIChat() {
   useEffect(() => {
     api.getHealth()
       .then((health) => {
-        const ollamaOk = health.services?.ollama?.status === 'connected';
-        const claudeOk = health.services?.claude_api?.status === 'connected';
+        const ollamaStatus = health.services?.ollama?.status;
+        const claudeStatus = health.services?.claude_api?.status;
+        const ollamaOk = ollamaStatus === 'connected';
+        const claudeOk = claudeStatus === 'connected';
+        const bothNotConfigured = ollamaStatus === 'not_configured' && claudeStatus === 'not_configured';
+
         if (ollamaOk) {
           setAiSource({ label: 'Using Ollama (Local)', color: 'bg-green-500' });
         } else if (claudeOk) {
           setAiSource({ label: 'Using Claude API', color: 'bg-blue-500' });
+        } else if (bothNotConfigured) {
+          setAiSource({ label: 'AI Off', color: 'bg-gray-400' });
         } else {
-          setAiSource({ label: 'AI Unavailable', color: 'bg-red-500' });
+          // Health API responded — if it's not an explicit failure, show as active
+          setAiSource({ label: 'AI Active', color: 'bg-green-500' });
         }
       })
       .catch(() => {
+        // Only show red when the API call itself fails (network error, etc.)
         setAiSource({ label: 'AI Unavailable', color: 'bg-red-500' });
       });
   }, []);

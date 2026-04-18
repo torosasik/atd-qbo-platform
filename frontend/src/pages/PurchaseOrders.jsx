@@ -13,6 +13,7 @@ import {
   MapPin,
 } from 'lucide-react';
 import { api } from '../utils/api';
+import { logActivity } from '../utils/activityLogger';
 import { getCached, setCache, invalidateAll } from '../utils/dataCache';
 import { formatCurrency, formatDateTime, generateId, getTodayDate } from '../utils/helpers';
 import Toggle from '../components/shared/Toggle';
@@ -794,6 +795,7 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, itemsLoading, v
         aiEnabled: form.aiEnabled,
       };
       const res = await api.createPo(payload);
+      logActivity('PO_CREATED', `PO #${form.poNumber} created${form.autoApprove ? ' and auto-approved to QBO' : ' as draft'}`);
 
       if (res.aiReview?.flagged) {
         setResult({ type: 'ai', message: 'AI flagged this PO.', data: res });
@@ -839,8 +841,17 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, itemsLoading, v
         <div className="bg-yellow-50 border border-yellow-300 rounded-lg px-4 py-3 text-sm">
           <div className="flex items-start gap-3 text-yellow-800 mb-2">
             <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
-            <strong>AI Review Flagged This PO</strong>
+            <strong>
+              {result.data?.aiResult?.reason
+                ? `AI Review Flagged: ${result.data.aiResult.reason}`
+                : 'AI Review Flagged This PO'}
+            </strong>
           </div>
+          {!result.data?.aiResult?.reason && (
+            <p className="text-yellow-700 ml-8 text-xs mb-2">
+              This PO was flagged for manual review. Check line items and pricing before submitting.
+            </p>
+          )}
           {result.data?.aiResult?.suggestions?.length > 0 && (
             <ul className="list-disc list-inside text-yellow-700 space-y-1 ml-8">
               {result.data.aiResult.suggestions.map((s, i) => (
@@ -1366,7 +1377,11 @@ function DraftsTab() {
 
   function calcEstTotal(draft) {
     const lines = draft.lines || [];
-    return lines.reduce((sum, l) => sum + (parseFloat(l.qty) || 0) * (parseFloat(l.unitPrice) || 0), 0);
+    return lines.reduce((sum, l) => {
+      const qty = parseFloat(l.qty ?? l.quantity ?? 0) || 0;
+      const price = parseFloat(l.unitPrice ?? l.unit_price ?? l.price ?? 0) || 0;
+      return sum + qty * price;
+    }, 0);
   }
 
   function aiStatusBadge(draft) {

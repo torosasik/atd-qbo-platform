@@ -818,7 +818,12 @@ export default function Orders() {
       setSelected(new Set());
       setToast({ message: `Marked ${updates.length} rows as ${status}`, type: 'success' });
     } catch (err) {
-      setToast({ message: err.message || 'Failed to update statuses', type: 'error' });
+      const msg = err.message || '';
+      if (/status must be one of/i.test(msg) || /status.*Pending.*Ordered.*Received.*Fulfilled/i.test(msg)) {
+        setToast({ message: 'This order is already marked as ordered.', type: 'error' });
+      } else {
+        setToast({ message: err.message || 'Failed to update statuses', type: 'error' });
+      }
     }
   }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, RefreshCw, AlertTriangle, Sparkles } from 'lucide-react';
 import { api, humanizeError } from '../utils/api';
+import { logActivity } from '../utils/activityLogger';
 import Toggle from '../components/shared/Toggle';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 
@@ -290,6 +291,7 @@ export default function Rules() {
         await api.updateRule(editingRule.id, form);
       } else {
         await api.createRule(form);
+        logActivity('RULE_CREATED', `Rule created: ${form.name || form.type}`);
       }
       setModalOpen(false);
       setEditingRule(null);
@@ -309,8 +311,11 @@ export default function Rules() {
   }
 
   async function deleteRule(id) {
+    if (!window.confirm('Delete this rule? This cannot be undone.')) return;
     try {
+      const rule = rules.find((r) => r.id === id);
       await api.deleteRule(id);
+      logActivity('RULE_DELETED', `Rule deleted: ${rule?.name || id}`);
       await load();
     } catch (err) {
       setError(humanizeError(err));
