@@ -292,20 +292,7 @@ export default function QBOConnect() {
                 {expiryInfo.text}
               </p>
             </div>
-            {(expiryInfo.level === 'critical' || expiryInfo.level === 'expired') && (
-              <button
-                onClick={handleRefreshToken}
-                disabled={actionLoading === 'refresh'}
-                className="flex items-center gap-1.5 bg-white/80 hover:bg-white text-red-700 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-60"
-              >
-                {actionLoading === 'refresh' ? (
-                  <LoadingSpinner size="sm" color="gray" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
-                )}
-                Refresh Now
-              </button>
-            )}
+
           </div>
           <p className="text-xs text-gray-500 mt-2 ml-13">
             Updates every 60 seconds · Token auto-refreshes before expiry
@@ -338,18 +325,6 @@ export default function QBOConnect() {
                   <CheckCircle className="h-4 w-4" />
                 )}
                 Test Connection
-              </button>
-              <button
-                onClick={handleRefreshToken}
-                disabled={actionLoading === 'refresh'}
-                className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-5 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
-              >
-                {actionLoading === 'refresh' ? (
-                  <LoadingSpinner size="sm" color="gray" />
-                ) : (
-                  <RefreshCw className="h-4 w-4" />
-                )}
-                Refresh Token
               </button>
               <button
                 onClick={handleDisconnect}

@@ -2004,7 +2004,7 @@ function ImportFromSheetsTab({ onSwitchToDrafts }) {
 // ---------------------------------------------------------------------------
 // Main Page
 // ---------------------------------------------------------------------------
-const TABS = ['Create New', 'Pending Drafts', 'History', 'Import from Sheets'];
+const TABS = ['Create New', 'Pending Drafts', 'History'];
 
 export default function PurchaseOrders({ initialTab }) {
   const location = useLocation();
@@ -2015,7 +2015,6 @@ export default function PurchaseOrders({ initialTab }) {
   const [activeTab, setActiveTab] = useState(() => {
     if (initialTab === 'drafts') return 1;
     if (initialTab === 'history') return 2;
-    if (initialTab === 'import') return 3;
     return 0;
   });
   const [vendors, setVendors] = useState([]);
@@ -2214,7 +2213,6 @@ export default function PurchaseOrders({ initialTab }) {
       )}
       {activeTab === 1 && <DraftsTab />}
       {activeTab === 2 && <HistoryTab />}
-      {activeTab === 3 && <ImportFromSheetsTab onSwitchToDrafts={() => setActiveTab(1)} />}
     </div>
   );
 }

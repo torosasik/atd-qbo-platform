@@ -198,6 +198,103 @@ function TextInput({ value, onChange, placeholder, readOnly, className = '' }) {
 }
 
 // ---------------------------------------------------------------------------
+// Vendor Mapping Section (embedded in Settings)
+// ---------------------------------------------------------------------------
+function VendorMappingSection({ showToast }) {
+  const [vendors, setVendors] = useState([]);
+  const [vendorLoading, setVendorLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState(null);
+
+  useEffect(() => {
+    loadVendors();
+  }, []);
+
+  async function loadVendors() {
+    setVendorLoading(true);
+    try {
+      const res = await api.getVendorMappings();
+      const data = res.data || res;
+      const list = data.mappings?.vendors || data.vendors || [];
+      setVendors(Array.isArray(list) ? list : []);
+      setLastSynced(data.mappings?.lastSynced || data.lastSynced || null);
+    } catch {
+      showToast('Failed to load vendor mappings.', 'error');
+    } finally {
+      setVendorLoading(false);
+    }
+  }
+
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      await api.syncVendorMappings();
+      showToast('Vendors synced from QBO.', 'success');
+      await loadVendors();
+    } catch (err) {
+      showToast(err.message || 'Failed to sync vendors.', 'error');
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm">
+      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h2 className="text-base font-semibold text-atd-dark">Vendor Mapping</h2>
+        <button
+          onClick={handleSync}
+          disabled={syncing}
+          className="flex items-center gap-2 bg-atd-blue hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+        >
+          <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+          Sync from QBO
+        </button>
+      </div>
+      <div className="px-6 py-5">
+        <p className="text-sm text-gray-500 mb-4">
+          Last synced: {lastSynced ? new Date(lastSynced).toLocaleString() : 'Never'}
+        </p>
+        {vendorLoading ? (
+          <div className="flex justify-center py-8">
+            <LoadingSpinner size="lg" color="atd-blue" />
+          </div>
+        ) : vendors.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-8">No vendors found. Click "Sync from QBO" to load vendors.</p>
+        ) : (
+          <div className="overflow-x-auto max-h-96 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Vendor Name</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-600">QBO ID</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-600">Active</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {vendors.map((v, idx) => (
+                  <tr key={v.qbo_id || v.Id || idx} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 text-gray-700">{v.qbo_name || v.DisplayName || '-'}</td>
+                    <td className="px-4 py-2 text-gray-500 font-mono text-xs">{v.qbo_id || v.Id || '-'}</td>
+                    <td className="px-4 py-2">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                        v.active !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        {v.active !== false ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 export default function Settings() {
@@ -1020,6 +1117,9 @@ export default function Settings() {
         </div>
       </SectionCard>
       </div>{/* end grid: AI + Modules */}
+
+      {/* Vendor Mapping */}
+      <VendorMappingSection showToast={showToast} />
 
       {/* Danger Zone */}
       <div className="bg-white rounded-xl shadow-sm px-6 py-5">

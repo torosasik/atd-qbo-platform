@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Pencil, Trash2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, Trash2, RefreshCw, AlertTriangle, Sparkles } from 'lucide-react';
 import { api, humanizeError } from '../utils/api';
 import Toggle from '../components/shared/Toggle';
+import LoadingSpinner from '../components/shared/LoadingSpinner';
 
 const RULE_TYPES = ['SKU_MAPPING', 'PRICING', 'NAMING', 'UNIT_CONVERSION'];
 
@@ -68,6 +69,105 @@ function RuleFields({ type, value, onChange }) {
   );
 }
 
+function AIRuleModal({ open, onClose, onGenerated }) {
+  const [description, setDescription] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [aiError, setAiError] = useState('');
+
+  useEffect(() => {
+    if (open) {
+      setDescription('');
+      setAiError('');
+      setGenerating(false);
+    }
+  }, [open]);
+
+  async function handleGenerate() {
+    if (!description.trim()) return;
+    setGenerating(true);
+    setAiError('');
+    try {
+      const systemPrompt = 'You are a business rules assistant for a tile company. Parse the user description into a JSON rule object with this exact shape: { type: one of SKU_MAPPING|PRICING|NAMING|UNIT_CONVERSION, vendor: string, active: true, rule: object }. For SKU_MAPPING rule contains { atd_sku, vendor_sku }. For PRICING rule contains { discount_percent, start_date, end_date }. For NAMING rule contains { atd_name, vendor_name }. For UNIT_CONVERSION rule contains { atd_unit, vendor_unit, conversion_factor }. Return only valid JSON, no explanation.';
+      const res = await api.post('/ai/chat', {
+        message: description.trim(),
+        context: 'rules',
+        system: systemPrompt,
+      });
+      const text = res.reply || res.data?.reply || res.message || res.data?.message || '';
+      // Try to extract JSON from the response
+      let parsed = null;
+      try {
+        // Try direct parse first
+        parsed = JSON.parse(text);
+      } catch {
+        // Try to find JSON in the text
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            parsed = JSON.parse(jsonMatch[0]);
+          } catch {
+            parsed = null;
+          }
+        }
+      }
+      if (parsed && parsed.type && parsed.rule) {
+        onGenerated(parsed);
+        onClose();
+      } else {
+        setAiError(`Could not parse AI response. Raw output:\n${text}`);
+      }
+    } catch (err) {
+      setAiError(err.message || 'AI request failed.');
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl w-full max-w-lg">
+        <div className="px-5 py-4 border-b flex items-center justify-between">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-purple-500" />
+            Add Rule via AI
+          </h3>
+          <button onClick={onClose} className="text-gray-500">✕</button>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-gray-500">
+            Describe your rule in plain English. For example: "Map SKU ATD-1234 to vendor SKU VND-5678 for Bedrosians" or "Apply 15% discount for Dal-Tile starting January 2025"
+          </p>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Describe the rule you want to create..."
+            rows={4}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+          />
+          {aiError && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800 whitespace-pre-wrap max-h-40 overflow-y-auto">
+              {aiError}
+            </div>
+          )}
+        </div>
+        <div className="px-5 py-4 border-t flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 text-sm bg-gray-100 rounded-lg">Cancel</button>
+          <button
+            onClick={handleGenerate}
+            disabled={generating || !description.trim()}
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-purple-600 text-white rounded-lg disabled:opacity-60"
+          >
+            {generating ? <LoadingSpinner size="sm" color="white" /> : <Sparkles className="h-4 w-4" />}
+            Generate Rule
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RuleModal({ open, onClose, onSubmit, vendors, initial }) {
   const [form, setForm] = useState({ type: 'SKU_MAPPING', vendor: '', active: true, rule: initialRuleByType('SKU_MAPPING') });
 
@@ -120,6 +220,7 @@ export default function Rules() {
   const [error, setError] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState(null);
+  const [aiModalOpen, setAiModalOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -186,6 +287,7 @@ export default function Rules() {
         </div>
         <div className="flex items-center gap-2">
           <button onClick={load} className="px-3 py-2 border rounded-lg text-sm flex items-center gap-2"><RefreshCw className="h-4 w-4" />Refresh</button>
+          <button onClick={() => setAiModalOpen(true)} className="px-3 py-2 bg-purple-600 text-white rounded-lg text-sm flex items-center gap-2"><Sparkles className="h-4 w-4" />Add via AI</button>
           <button onClick={() => { setEditingRule(null); setModalOpen(true); }} className="px-3 py-2 bg-atd-blue text-white rounded-lg text-sm flex items-center gap-2"><Plus className="h-4 w-4" />Add Rule</button>
         </div>
       </div>
@@ -235,6 +337,14 @@ export default function Rules() {
       </div>
 
       <RuleModal open={modalOpen} onClose={() => { setModalOpen(false); setEditingRule(null); }} onSubmit={submitRule} vendors={vendors} initial={editingRule} />
+      <AIRuleModal
+        open={aiModalOpen}
+        onClose={() => setAiModalOpen(false)}
+        onGenerated={(parsed) => {
+          setEditingRule(parsed);
+          setModalOpen(true);
+        }}
+      />
     </div>
   );
 }

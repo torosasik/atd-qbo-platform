@@ -544,6 +544,7 @@ export default function Orders() {
 
   // UI state
   const [showFulfilled, setShowFulfilled] = useState(false);
+  const [showSamples, setShowSamples] = useState(false);
   const [sortKey, setSortKey] = useState(null);
   const [sortDir, setSortDir] = useState('asc');
   const [selected, setSelected] = useState(new Set());
@@ -709,6 +710,13 @@ export default function Orders() {
         return true;
       });
     }
+    // Filter out sample orders when toggle is off
+    if (!showSamples && vendorHeader) {
+      result = result.filter((row) => {
+        const vendor = (row[vendorHeader] || '').toString().trim();
+        return !vendor.toLowerCase().startsWith('samples');
+      });
+    }
     if (sortKey) {
       result = [...result].sort((a, b) => {
         const av = String(a[sortKey] || '').toLowerCase();
@@ -718,7 +726,7 @@ export default function Orders() {
       });
     }
     return result;
-  }, [rows, statuses, showFulfilled, sortKey, sortDir, orderNumHeader, lineItemHeader, sheetStatusHeader]);
+  }, [rows, statuses, showFulfilled, showSamples, sortKey, sortDir, orderNumHeader, lineItemHeader, sheetStatusHeader, vendorHeader]);
 
   const searchableRows = useMemo(() => {
     return baseRows.map((row, __index) => ({
@@ -944,7 +952,7 @@ export default function Orders() {
         <div>
           <h1 className="text-2xl font-bold text-atd-dark">Orders</h1>
           <p className="text-gray-500 text-sm mt-0.5">
-            {displayRows.length} row{displayRows.length !== 1 ? 's' : ''} from Google Sheets
+            {displayRows.length} unfulfilled order{displayRows.length !== 1 ? 's' : ''}
           </p>
           <p className="text-xs text-gray-400 mt-1">
             Last synced: {formatTimestamp(lastSyncedAt) || 'Not yet synced'}{ordersDataSource ? ` • Source: ${ordersDataSource}` : ''}
@@ -1023,6 +1031,7 @@ export default function Orders() {
       <div className="flex flex-wrap items-start gap-3">
         <FuzzySearch items={searchableRows} totalCount={baseRows.length} onResultsChange={setSearchState} />
         <Toggle id="show-fulfilled" checked={showFulfilled} onChange={setShowFulfilled} label="Show Fulfilled" />
+        <Toggle id="show-samples" checked={showSamples} onChange={setShowSamples} label="Show Samples" />
 
         {/* Column visibility */}
         <div className="relative">
@@ -1050,7 +1059,7 @@ export default function Orders() {
               )}
             </div>
             <button onClick={() => handleBulkStatus('Received')} className="bg-orange-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors">Mark Received</button>
-            <button onClick={() => handleBulkStatus('Fulfilled')} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors">Mark Fulfilled</button>
+            <button onClick={() => handleBulkStatus('Ordered')} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">Mark Ordered</button>
             <button onClick={() => setSelected(new Set())} className="text-gray-500 hover:text-gray-700 transition-colors"><X className="h-4 w-4" /></button>
           </div>
         )}

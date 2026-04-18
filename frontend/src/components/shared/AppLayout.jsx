@@ -48,7 +48,6 @@ const NAV_GROUPS = [
     label: 'Setup',
     items: [
       { to: '/qbo-connect', label: 'QBO Connect', icon: Link2 },
-      { to: '/vendor-management', label: 'Vendor Mapping', icon: Tags, featureKey: 'vendor_management' },
       { to: '/rules', label: 'Business Rules', icon: Scale },
       { to: '/settings', label: 'Settings', icon: Settings },
     ],
