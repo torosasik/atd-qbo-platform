@@ -11,16 +11,24 @@ export default function ProtectedRoute({ children }) {
   const [user, setUser] = useState(undefined);
 
   useEffect(() => {
-    // In test mode, auto sign-in with test credentials
-    if (TEST_MODE && TEST_EMAIL && TEST_PASSWORD) {
-      signInWithEmailAndPassword(auth, TEST_EMAIL, TEST_PASSWORD)
-        .catch(() => {}); // silently fail — onAuthStateChanged handles result
+    let unsubscribe;
+
+    async function init() {
+      // In test mode, sign in first then subscribe so first auth check is already authenticated
+      if (TEST_MODE && TEST_EMAIL && TEST_PASSWORD) {
+        try {
+          await signInWithEmailAndPassword(auth, TEST_EMAIL, TEST_PASSWORD);
+        } catch (e) {
+          // Already signed in or wrong credentials — fall through to onAuthStateChanged
+        }
+      }
+      unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+        setUser(firebaseUser);
+      });
     }
 
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
-    });
-    return unsubscribe;
+    init();
+    return () => unsubscribe?.();
   }, []);
 
   if (user === undefined) {
