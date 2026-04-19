@@ -8,31 +8,42 @@ const TEST_EMAIL = import.meta.env.VITE_TEST_EMAIL;
 const TEST_PASSWORD = import.meta.env.VITE_TEST_PASSWORD;
 
 export default function ProtectedRoute({ children }) {
-  const [user, setUser] = useState(undefined);
+  const [status, setStatus] = useState('loading'); // 'loading' | 'authed' | 'unauthed'
 
   useEffect(() => {
-    let unsubscribe;
+    const run = async () => {
+      // Wait for Firebase to fully initialize auth state
+      await auth.authStateReady();
 
-    // Wait for Firebase to finish determining auth state before subscribing
-    auth.authStateReady().then(async () => {
-      // If no user and test mode — auto sign in
-      if (!auth.currentUser && TEST_MODE && TEST_EMAIL && TEST_PASSWORD) {
+      // Already signed in — done
+      if (auth.currentUser) {
+        setStatus('authed');
+        // Keep listening for sign-out
+        onAuthStateChanged(auth, (u) => setStatus(u ? 'authed' : 'unauthed'));
+        return;
+      }
+
+      // Not signed in — try test mode auto sign-in
+      if (TEST_MODE && TEST_EMAIL && TEST_PASSWORD) {
         try {
           await signInWithEmailAndPassword(auth, TEST_EMAIL, TEST_PASSWORD);
+          setStatus('authed');
+          onAuthStateChanged(auth, (u) => setStatus(u ? 'authed' : 'unauthed'));
+          return;
         } catch (e) {
-          // Already signed in or wrong creds — fall through
+          // Test sign-in failed — fall through to unauthed
         }
       }
-      // Now subscribe — first call is guaranteed to have the correct user
-      unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-        setUser(firebaseUser ?? null);
-      });
-    });
 
-    return () => unsubscribe?.();
+      setStatus('unauthed');
+      // Keep listening in case user signs in elsewhere
+      onAuthStateChanged(auth, (u) => setStatus(u ? 'authed' : 'unauthed'));
+    };
+
+    run();
   }, []);
 
-  if (user === undefined) {
+  if (status === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-3">
@@ -43,7 +54,7 @@ export default function ProtectedRoute({ children }) {
     );
   }
 
-  if (!user) {
+  if (status === 'unauthed') {
     return <Navigate to="/login" replace />;
   }
 
