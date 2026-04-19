@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { signInWithPopup, signInWithEmailAndPassword } from 'firebase/auth';
+import { useState, useEffect } from 'react';
+import { signInWithPopup, signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
+import { useNavigate } from 'react-router-dom';
 import { auth, googleProvider } from '../firebase';
 import { logActivity } from '../utils/activityLogger';
 
@@ -10,6 +11,15 @@ export default function Login() {
   const [error, setError] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const navigate = useNavigate();
+
+  // Redirect to dashboard if already logged in
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) navigate('/', { replace: true });
+    });
+    return unsub;
+  }, [navigate]);
 
   const handleEmailSignIn = async (e) => {
     e.preventDefault();
