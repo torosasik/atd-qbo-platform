@@ -6,6 +6,7 @@ const Joi = require('joi');
 const cors = (req, res, next) => {
   const allowedOrigins = [
     'https://atd-qbo-platform.web.app',
+    'https://atd-ops-hub.web.app',
     'https://us-central1-atd-qbo-platform.cloudfunctions.net'
   ];
   const origin = req.get('Origin');
