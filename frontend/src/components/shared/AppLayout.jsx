@@ -247,9 +247,10 @@ export default function AppLayout({ children }) {
   const { features } = useFeatures();
   const navigate = useNavigate();
   
-  // Session inactivity timeout — 8 hours = 28,800,000 milliseconds
+  // Session inactivity timeout — 24 hours
+  // Note: setTimeout max delay is ~24.8 days; larger values fire immediately!
   const inactivityTimeout = useRef(null);
-  const INACTIVITY_TIMEOUT_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+  const INACTIVITY_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
   
   // Reset the inactivity timer
   const resetInactivityTimer = useCallback(() => {
