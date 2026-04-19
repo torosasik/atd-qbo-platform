@@ -15,10 +15,10 @@ export default function Login() {
   // If already logged in, go to dashboard
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
-      if (user) navigate('/', { replace: true });
+      if (user) window.location.href = '/';
     });
     return unsub;
-  }, [navigate]);
+  }, []);
 
   const handleEmailSignIn = async (e) => {
     e.preventDefault();
