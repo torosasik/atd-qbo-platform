@@ -28,6 +28,7 @@ export default function Login() {
     try {
       const result = await signInWithEmailAndPassword(auth, email, password);
       logActivity('USER_LOGIN', `User logged in: ${result.user.email}`);
+      navigate('/', { replace: true });
     } catch (err) {
       setError('Invalid email or password. Please try again.');
     } finally {
@@ -41,6 +42,7 @@ export default function Login() {
     try {
       const result = await signInWithPopup(auth, googleProvider);
       logActivity('USER_LOGIN', `User logged in: ${result.user.email}`);
+      navigate('/', { replace: true });
     } catch (err) {
       const msg = err?.message || 'Sign-in failed. Please try again.';
       if (msg.includes('popup-closed') || msg.includes('cancelled')) {
