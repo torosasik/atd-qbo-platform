@@ -249,7 +249,7 @@ export default function AppLayout({ children }) {
   
   // Session inactivity timeout — 8 hours = 28,800,000 milliseconds
   const inactivityTimeout = useRef(null);
-  const INACTIVITY_TIMEOUT_MS = 8 * 60 * 60 * 1000; // 8 hours
+  const INACTIVITY_TIMEOUT_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
   
   // Reset the inactivity timer
   const resetInactivityTimer = useCallback(() => {
