@@ -247,58 +247,6 @@ export default function AppLayout({ children }) {
   const { features } = useFeatures();
   const navigate = useNavigate();
   
-  // Session inactivity timeout — 24 hours
-  // Note: setTimeout max delay is ~24.8 days; larger values fire immediately!
-  const inactivityTimeout = useRef(null);
-  const INACTIVITY_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
-  
-  // Reset the inactivity timer
-  const resetInactivityTimer = useCallback(() => {
-    if (inactivityTimeout.current) {
-      clearTimeout(inactivityTimeout.current);
-    }
-    
-    inactivityTimeout.current = setTimeout(() => {
-      const auth = getAuth();
-      signOut(auth)
-        .then(() => {
-          console.log('Session timed out due to inactivity');
-          logActivity('USER_LOGOUT', 'User session timed out due to inactivity');
-          navigate('/login');
-        })
-        .catch((error) => {
-          console.error('Error signing out on inactivity timeout:', error);
-          navigate('/login');
-        });
-    }, INACTIVITY_TIMEOUT_MS);
-  }, [navigate]);
-  
-  // Initialize and track inactivity
-  useEffect(() => {
-    // Reset timer on initial mount
-    resetInactivityTimer();
-    
-    // Event listener to reset timer on user activity
-    const resetTimerOnActivity = () => {
-      resetInactivityTimer();
-    };
-    
-    // Listen for mouse movements and keyboard events
-    const events = ['mousemove', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'keydown', 'scroll'];
-    events.forEach(event => {
-      window.addEventListener(event, resetTimerOnActivity, { passive: true });
-    });
-    
-    // Cleanup event listeners and timer
-    return () => {
-      events.forEach(event => {
-        window.removeEventListener(event, resetTimerOnActivity);
-      });
-      if (inactivityTimeout.current) {
-        clearTimeout(inactivityTimeout.current);
-      }
-    };
-  }, [resetInactivityTimer]);
 
   // Global health check — lightweight poll
   const [healthStatus, setHealthStatus] = useState(null);
