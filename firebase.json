@@ -15,6 +15,9 @@
         "source": "**",
         "destination": "/index.html"
       }
+    ],
+    "predeploy": [
+      "bash predeploy-check.sh"
     ]
   },
   "functions": {
