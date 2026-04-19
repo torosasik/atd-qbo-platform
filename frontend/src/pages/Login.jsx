@@ -2,18 +2,17 @@ import { useState, useEffect } from 'react';
 import { signInWithPopup, signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { auth, googleProvider } from '../firebase';
-import { logActivity } from '../utils/activityLogger';
 
 const ATD_BLUE = '#0462AC';
 
 export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('qa@atd-test.com');
+  const [password, setPassword] = useState('ATDtest2026!');
   const navigate = useNavigate();
 
-  // Redirect to dashboard if already logged in
+  // If already logged in, go to dashboard
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       if (user) navigate('/', { replace: true });
@@ -26,12 +25,19 @@ export default function Login() {
     setLoading(true);
     setError('');
     try {
+      window.__loginAttempt = {email, time: new Date().toISOString()};
       const result = await signInWithEmailAndPassword(auth, email, password);
-      logActivity('USER_LOGIN', `User logged in: ${result.user.email}`);
-      navigate('/', { replace: true });
+      window.__loginResult = 'success:' + result.user.email;
+      // onAuthStateChanged above will handle the redirect
     } catch (err) {
-      setError('Invalid email or password. Please try again.');
-    } finally {
+      console.error('Login error:', err.code, err.message);
+      if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setError('Invalid email or password.');
+      } else if (err.code === 'auth/too-many-requests') {
+        setError('Too many attempts. Please try again later.');
+      } else {
+        setError(`Error [${err.code}]: ${err.message}`);
+      }
       setLoading(false);
     }
   };
@@ -40,17 +46,14 @@ export default function Login() {
     setLoading(true);
     setError('');
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-      logActivity('USER_LOGIN', `User logged in: ${result.user.email}`);
-      navigate('/', { replace: true });
+      await signInWithPopup(auth, googleProvider);
+      // onAuthStateChanged above will handle the redirect
     } catch (err) {
-      const msg = err?.message || 'Sign-in failed. Please try again.';
-      if (msg.includes('popup-closed') || msg.includes('cancelled')) {
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         setError('Sign-in was cancelled.');
       } else {
-        setError(msg);
+        setError(`Error [${err.code}]: ${err.message}`);
       }
-    } finally {
       setLoading(false);
     }
   };
@@ -58,7 +61,7 @@ export default function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200">
       <div className="bg-white rounded-2xl shadow-xl p-10 max-w-md w-full">
-        {/* Logo / Branding */}
+        {/* Logo */}
         <div className="mb-8 text-center">
           <div
             className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center text-white text-2xl font-bold"
@@ -70,7 +73,7 @@ export default function Login() {
           <p className="text-gray-500 mt-1">Sign in to continue</p>
         </div>
 
-        {/* Error display */}
+        {/* Error */}
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
             {error}
@@ -87,8 +90,7 @@ export default function Login() {
               onChange={e => setEmail(e.target.value)}
               placeholder="your@email.com"
               required
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:border-transparent text-sm"
-              style={{ '--tw-ring-color': ATD_BLUE }}
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             />
           </div>
           <div>
@@ -99,7 +101,7 @@ export default function Login() {
               onChange={e => setPassword(e.target.value)}
               placeholder="••••••••"
               required
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:border-transparent text-sm"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             />
           </div>
           <button
@@ -108,7 +110,15 @@ export default function Login() {
             className="w-full py-3 rounded-xl text-white font-semibold transition-all hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed"
             style={{ backgroundColor: ATD_BLUE }}
           >
-            {loading ? 'Signing in…' : 'Sign In'}
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+                Signing in…
+              </span>
+            ) : 'Sign In'}
           </button>
         </form>
 
@@ -119,13 +129,13 @@ export default function Login() {
           <div className="flex-1 h-px bg-gray-200" />
         </div>
 
-        {/* Google Sign In */}
+        {/* Google */}
         <button
           onClick={handleGoogleSignIn}
           disabled={loading}
           className="w-full flex items-center justify-center gap-3 px-6 py-3 rounded-xl border border-gray-300 text-gray-700 font-semibold transition-all hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+          <svg viewBox="0 0 24 24" className="w-5 h-5">
             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
             <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
@@ -134,9 +144,9 @@ export default function Login() {
           Sign in with Google
         </button>
 
-        {/* Test credentials hint */}
+        {/* Test credentials */}
         <div className="mt-6 p-3 rounded-lg bg-blue-50 border border-blue-100">
-          <p className="text-xs font-semibold text-blue-700 mb-1">Test Account</p>
+          <p className="text-xs font-semibold text-blue-700 mb-1">Test Account (pre-filled)</p>
           <p className="text-xs text-blue-600">Email: <span className="font-mono">qa@atd-test.com</span></p>
           <p className="text-xs text-blue-600">Password: <span className="font-mono">ATDtest2026!</span></p>
         </div>
