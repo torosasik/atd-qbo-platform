@@ -1,12 +1,22 @@
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../firebase';
 
+const TEST_MODE = import.meta.env.VITE_TEST_MODE === 'true';
+const TEST_EMAIL = import.meta.env.VITE_TEST_EMAIL;
+const TEST_PASSWORD = import.meta.env.VITE_TEST_PASSWORD;
+
 export default function ProtectedRoute({ children }) {
-  const [user, setUser] = useState(undefined); // undefined = loading
+  const [user, setUser] = useState(undefined);
 
   useEffect(() => {
+    // In test mode, auto sign-in with test credentials
+    if (TEST_MODE && TEST_EMAIL && TEST_PASSWORD) {
+      signInWithEmailAndPassword(auth, TEST_EMAIL, TEST_PASSWORD)
+        .catch(() => {}); // silently fail — onAuthStateChanged handles result
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
     });
@@ -14,7 +24,6 @@ export default function ProtectedRoute({ children }) {
   }, []);
 
   if (user === undefined) {
-    // Still checking auth state — show a neutral loader
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-3">

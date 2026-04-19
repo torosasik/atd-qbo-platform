@@ -639,6 +639,7 @@ function CreateTab({ vendors, qboVendors, items, vendorsLoading, itemsLoading, v
   const [createItemModalOpen, setCreateItemModalOpen] = useState(false);
   const [createItemSearchTerm, setCreateItemSearchTerm] = useState('');
   // State for confirmation modal
+  const [showAutoApproveConfirm, setShowAutoApproveConfirm] = useState(false);
   const [confirmModal, setConfirmModal] = useState({
     isOpen: false,
     onConfirm: null,
