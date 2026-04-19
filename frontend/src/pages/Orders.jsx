@@ -746,6 +746,17 @@ export default function Orders() {
     return searchState.indexes.map((idx) => searchableRows[idx]?.row).filter(Boolean);
   }, [baseRows, searchableRows, searchState]);
 
+  // Count unique order numbers (one order may have multiple line items)
+  const uniqueOrderCount = useMemo(() => {
+    if (!orderNumHeader) return displayRows.length;
+    const set = new Set();
+    for (const row of displayRows) {
+      const num = String(row[orderNumHeader] ?? '').trim();
+      if (num) set.add(num);
+    }
+    return set.size;
+  }, [displayRows, orderNumHeader]);
+
   // Reset selection/expansion when displayed row set changes (search/filter/sort)
   const prevDisplayRowsLengthRef = useRef();
   useEffect(() => {
@@ -957,7 +968,7 @@ export default function Orders() {
         <div>
           <h1 className="text-2xl font-bold text-atd-dark">Orders</h1>
           <p className="text-gray-500 text-sm mt-0.5">
-            {displayRows.length} unfulfilled order{displayRows.length !== 1 ? 's' : ''}
+            {uniqueOrderCount} unfulfilled order{uniqueOrderCount !== 1 ? 's' : ''} · {displayRows.length} line item{displayRows.length !== 1 ? 's' : ''}
           </p>
           <p className="text-xs text-gray-400 mt-1">
             Last synced: {formatTimestamp(lastSyncedAt) || 'Not yet synced'}{ordersDataSource ? ` • Source: ${ordersDataSource}` : ''}
