@@ -16,7 +16,7 @@ const cors = (req, res, next) => {
     // For same-origin or no Origin header (like direct CF calls)
     res.set('Access-Control-Allow-Origin', '*');
   }
-  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.set('Access-Control-Allow-Credentials', 'true');
 
