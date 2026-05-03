@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { api } from '../utils/api';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
+import { formatDateTime } from '../utils/helpers';
 
 // ---------------------------------------------------------------------------
 // Error translation — converts raw backend errors to business language
@@ -178,7 +179,7 @@ function ServiceCard({ name, icon: Icon, service }) {
             {service.token_expires_at && (
               <DetailRow
                 label="Token expires"
-                value={new Date(service.token_expires_at).toLocaleString()}
+                value={formatDateTime(service.token_expires_at)}
               />
             )}
             {service.url && (

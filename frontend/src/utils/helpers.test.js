@@ -100,10 +100,10 @@ describe('helpers', () => {
       expect(formatDateTime('')).toBe('-');
     });
 
-    it('should return "Invalid Date" for invalid date string', () => {
+    it('should return "-" for invalid date string', () => {
       // When Date constructor receives 'invalid-date', it creates an Invalid Date
-      // and toLocaleString returns 'Invalid Date'
-      expect(formatDateTime('invalid-date')).toBe('Invalid Date');
+      // Number.isNaN check returns true, so function returns '-'
+      expect(formatDateTime('invalid-date')).toBe('-');
     });
   });
 

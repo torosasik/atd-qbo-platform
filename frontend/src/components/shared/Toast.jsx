@@ -25,7 +25,7 @@ export default function Toast({ message, fix, type = 'success', onDismiss }) {
   const style = styles[type] || styles.success;
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-4">
+    <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-4" role="status" aria-live="polite">
       <div
         className={`flex ${fix ? 'items-start' : 'items-center'} gap-3 rounded-lg border px-4 py-3 shadow-lg min-w-64 max-w-sm ${style.container}`}
       >

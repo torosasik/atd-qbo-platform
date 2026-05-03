@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { RefreshCw, Save, Search, AlertCircle, Link2, Unplug, AlertTriangle } from 'lucide-react';
 import { api } from '../utils/api';
 import { logActivity } from '../utils/activityLogger';
+import { formatDateTime } from '../utils/helpers';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
 import Toast from '../components/shared/Toast';
 import Toggle from '../components/shared/Toggle';
@@ -307,7 +308,7 @@ export default function VendorManagement() {
             </button>
             {lastSynced && (
               <span className="text-xs text-gray-400">
-                Last synced: {new Date(lastSynced).toLocaleString()}
+                Last synced: {formatDateTime(lastSynced)}
               </span>
             )}
           </div>

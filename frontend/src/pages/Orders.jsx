@@ -1152,6 +1152,7 @@ export default function Orders() {
                     <>
                       <tr
                         key={`${orderNumHeader ? row[orderNumHeader] || idx : idx}-${lineItemHeader ? row[lineItemHeader] || idx : idx}`}
+                        style={{ contentVisibility: 'auto', containIntrinsicSize: '0 48px' }}
                         className={`group cursor-pointer ${
                           isSelected ? 'bg-blue-50' : isExpanded ? 'bg-amber-50' : idx % 2 === 0 ? 'bg-white hover:bg-gray-50' : 'bg-gray-50/50 hover:bg-gray-100/50'
                         }`}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { RefreshCw, Search, Filter, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../utils/api';
+import { formatDateTime } from '../utils/helpers';
 
 const ACTIVITY_TYPES = [
   'PO_CREATED',
@@ -26,16 +27,6 @@ function typeBadgeClass(type) {
     AI_ACTION: 'bg-orange-100 text-orange-800',
   };
   return map[type] || 'bg-gray-100 text-gray-700';
-}
-
-/** Format ISO timestamp to a readable local string. */
-function formatTimestamp(ts) {
-  if (!ts) return '—';
-  try {
-    return new Date(ts).toLocaleString();
-  } catch {
-    return ts;
-  }
 }
 
 const PAGE_SIZE = 50;
@@ -245,7 +236,7 @@ export default function ActivityLog() {
                 entries.map((entry) => (
                   <tr key={entry.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap font-mono text-xs">
-                      {formatTimestamp(entry.timestamp)}
+                      {formatDateTime(entry.timestamp)}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${typeBadgeClass(entry.type)}`}>

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Save, RefreshCw, AlertCircle, CheckCircle, X, ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
 import { api } from '../utils/api';
 import { invalidateFeatureCache } from '../utils/useFeatures';
+import { formatDateTime } from '../utils/helpers';
 import Toggle from '../components/shared/Toggle';
 import Toast from '../components/shared/Toast';
 import LoadingSpinner from '../components/shared/LoadingSpinner';
@@ -253,7 +254,7 @@ function VendorMappingSection({ showToast }) {
       </div>
       <div className="px-6 py-5">
         <p className="text-sm text-gray-500 mb-4">
-          Last synced: {lastSynced ? new Date(lastSynced).toLocaleString() : 'Never'}
+          Last synced: {lastSynced ? formatDateTime(lastSynced) : 'Never'}
         </p>
         {vendorLoading ? (
           <div className="flex justify-center py-8">

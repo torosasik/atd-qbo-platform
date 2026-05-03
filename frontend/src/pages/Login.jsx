@@ -66,7 +66,10 @@ export default function Login() {
           <div
             className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center text-white text-2xl font-bold"
             style={{ backgroundColor: ATD_BLUE }}
+            aria-label="ATD logo"
+            role="img"
           >
+            <span className="sr-only">ATD</span>
             ATD
           </div>
           <h1 className="text-2xl font-bold text-gray-900">ATD QBO Platform</h1>
@@ -75,7 +78,7 @@ export default function Login() {
 
         {/* Error */}
         {error && (
-          <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+          <div role="alert" aria-live="polite" className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
             {error}
           </div>
         )}
@@ -86,10 +89,13 @@ export default function Login() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input
               type="email"
+              name="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
               placeholder="your@email.com"
               required
+              autoComplete="email"
+              spellCheck={false}
               className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             />
           </div>
@@ -97,10 +103,13 @@ export default function Login() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
             <input
               type="password"
+              name="password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               placeholder="••••••••"
               required
+              autoComplete="current-password"
+              spellCheck={false}
               className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             />
           </div>

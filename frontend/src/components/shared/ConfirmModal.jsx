@@ -1,11 +1,25 @@
+import { useState } from 'react';
 import { X } from 'lucide-react';
+import LoadingSpinner from './LoadingSpinner';
 
 export default function ConfirmModal({ isOpen, title, message, onConfirm, onCancel, confirmText = 'Confirm', cancelText = 'Cancel' }) {
+  const [loading, setLoading] = useState(false);
+
   if (!isOpen) return null;
 
   const handleBackdropClick = (e) => {
     if (e.target === e.currentTarget) {
       onCancel();
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      await onConfirm();
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -38,10 +52,11 @@ export default function ConfirmModal({ isOpen, title, message, onConfirm, onCanc
             {cancelText}
           </button>
           <button
-            onClick={onConfirm}
-            className="px-4 py-2 text-sm font-medium text-white bg-[#0462AC] hover:bg-[#034e8a] rounded-lg transition-colors"
+            onClick={handleConfirm}
+            disabled={loading}
+            className="px-4 py-2 text-sm font-medium text-white bg-[#0462AC] hover:bg-[#034e8a] rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {confirmText}
+            {loading ? <LoadingSpinner size="sm" /> : confirmText}
           </button>
         </div>
       </div>

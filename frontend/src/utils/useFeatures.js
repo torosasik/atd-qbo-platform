@@ -21,6 +21,7 @@ const DEFAULT_FEATURES = {
   vendor_management: true,
   dashboard_analytics: true,
   notifications: false,
+  virtualized_orders: false,
 };
 
 const CACHE_KEY = 'features';
